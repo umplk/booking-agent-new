@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<!-- 移动端适配 -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>校园图书馆 · 自习室座位预约</title>
+<!-- 引入外部样式 -->
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ========== 导航栏 ========== -->
+<nav class="navbar">
+  <div class="nav-logo">
+    <span class="book">📚</span>
+    <span>校园图书馆</span>
+  </div>
+  <ul class="nav-menu">
+    <li><a href="#" data-view="reserve">首页</a></li>
+    <li><a href="#" data-view="reserve" class="active">自习室预约</a></li>
+    <li><a href="#" data-view="mine">我的预约</a></li>
+    <li><a href="#" data-view="profile">个人中心</a></li>
+    <li><a href="#" data-view="notice">公告</a></li>
+    <li><a href="#" data-view="help">帮助</a></li>
+  </ul>
+  <div class="nav-user" id="navUser">
+    <span id="navUserName">未登录</span>
+    <div class="avatar" id="navAvatar">?</div>
+  </div>
+</nav>
+
+<!-- ========== 主内容（单页多视图） ========== -->
+<div class="container">
+
+  <!-- ---------- 视图：自习室座位预约 ---------- -->
+  <section class="view active" data-name="reserve" id="viewReserve">
+
+    <!-- 预约日期选择 -->
+    <div class="date-bar">
+      <span class="date-label">📅 预约日期</span>
+      <input type="date" id="reserveDate" class="date-input">
+      <span class="date-hint" id="dateHint">请先选择预约日期，再选择座位</span>
+    </div>
+
+    <!-- 楼层切换 -->
+    <div class="floor-tabs" id="floorTabs"><!-- JS 动态生成 --></div>
+
+    <h1 class="page-title" id="pageTitle">A栋 · 1楼 · 文学阅览区</h1>
+    <p class="page-sub" id="pageSub">开放时间 08:00 - 22:00 · 请文明使用，预约后15分钟内入座</p>
+
+    <!-- 图例与统计 -->
+    <div class="info-bar">
+      <div class="legend">
+        <div class="legend-item"><span class="legend-dot dot-free"></span>空闲</div>
+        <div class="legend-item"><span class="legend-dot dot-occ"></span>已占用</div>
+        <div class="legend-item"><span class="legend-dot dot-sel"></span>我的选中</div>
+        <div class="legend-item"><span class="legend-dot dot-rec"></span>智能推荐</div>
+        <div class="legend-item"><span class="legend-dot dot-power"></span>有电源</div>
+      </div>
+      <div class="stat">空闲 <b id="statFree">0</b> / 占用 <b id="statOcc">0</b> / 推荐 <b id="statRec">0</b></div>
+    </div>
+
+    <!-- 推荐结果面板 -->
+    <div class="recommend-panel" id="recommendPanel"></div>
+
+    <!-- 座位平面图 -->
+    <div class="room">
+      <div class="room-map" id="roomMap"><!-- JS 动态生成 --></div>
+      <div class="wall window-wall">🪟 靠窗区（自然光充足）</div>
+      <div class="wall">走道 / 入口</div>
+      <!-- 未选日期时的锁定遮罩 -->
+      <div class="room-lock" id="roomLock">
+        <div class="lock-icon">🔒</div>
+        <p>请先选择预约日期</p>
+        <span>选择当日或未来日期后，即可点选座位</span>
+      </div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="action-bar">
+      <button class="btn btn-ghost" id="btnReopen">重新选择偏好</button>
+      <button class="btn btn-primary" id="btnConfirm" disabled>确认预约</button>
+    </div>
+  </section>
+
+  <!-- ---------- 视图：我的预约 ---------- -->
+  <section class="view" data-name="mine" id="viewMine">
+    <h1 class="page-title">📋 我的预约</h1>
+    <p class="page-sub">查看并管理你已预约的座位，请在入座时间内到达</p>
+
+    <div class="my-reservation">
+      <div class="section-head">
+        <h2>有效预约</h2>
+        <span class="section-count" id="resCount">0 条预约</span>
+      </div>
+      <div class="reservation-list" id="reservationList"><!-- JS 动态生成 --></div>
+      <div class="reservation-empty" id="reservationEmpty">
+        <div class="empty-icon">🗓️</div>
+        <p>暂无预约记录</p>
+        <span>切换到「自习室预约」选择日期与座位，点击「确认预约」即可生成记录</span>
+      </div>
+      <div class="back-tip">
+        <button class="btn btn-ghost" id="btnGoReserve">前往预约座位</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 视图：个人中心 ---------- -->
+  <section class="view" data-name="profile" id="viewProfile">
+    <h1 class="page-title">👤 个人中心</h1>
+    <p class="page-sub">查看个人信息与全部预约历史记录</p>
+
+    <!-- 个人信息卡片 -->
+    <div class="profile-card">
+      <div class="profile-avatar" id="profileAvatar">?</div>
+      <div class="profile-info">
+        <h2 id="profileName">未登录</h2>
+        <p>学号：<span id="profileSid">—</span></p>
+      </div>
+      <div class="profile-stats">
+        <div class="stat-item"><b id="statTotal">0</b><span>累计预约</span></div>
+        <div class="stat-item"><b id="statValid">0</b><span>有效预约</span></div>
+        <div class="stat-item"><b id="statCancel">0</b><span>已取消</span></div>
+      </div>
+    </div>
+
+    <!-- 预约历史记录 -->
+    <div class="history-section">
+      <h2>🕘 预约历史记录</h2>
+      <p class="history-tip">包含所有预约与取消操作，按时间倒序排列</p>
+      <div class="history-list" id="historyList"><!-- JS 动态生成 --></div>
+      <div class="history-empty" id="historyEmpty">
+        <div class="empty-icon">📭</div>
+        <p>暂无历史记录</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 视图：公告 ---------- -->
+  <section class="view" data-name="notice" id="viewNotice">
+    <h1 class="page-title">📢 最新公告</h1>
+    <p class="page-sub">关注图书馆最新通知，合理安排学习时间</p>
+
+    <div class="notice-list">
+      <div class="notice-card">
+        <div class="notice-tag">开放时间</div>
+        <h3>关于调整自习室开放时间的通知</h3>
+        <p>自本周起，A栋各楼层自习室开放时间调整为 08:00 - 22:00，节假日照常开放，请同学们合理安排时间。</p>
+        <span class="notice-date">发布日期：2026-10-08</span>
+      </div>
+      <div class="notice-card">
+        <div class="notice-tag warn">预约规则</div>
+        <h3>座位预约新规：爽约将计入记录</h3>
+        <p>预约后请在 15 分钟内入座，逾期自动释放并计入爽约；累计爽约 3 次将暂停预约权限 7 天。</p>
+        <span class="notice-date">发布日期：2026-10-05</span>
+      </div>
+      <div class="notice-card">
+        <div class="notice-tag">假期安排</div>
+        <h3>国庆假期开放安排</h3>
+        <p>国庆期间 1F 文学阅览区与 5F 电子文献阅览区正常开放，其余楼层暂停服务，10 月 8 日全面恢复。</p>
+        <span class="notice-date">发布日期：2026-09-28</span>
+      </div>
+      <div class="notice-card">
+        <div class="notice-tag">系统维护</div>
+        <h3>预约系统维护通知</h3>
+        <p>每周日凌晨 00:00 - 02:00 为系统维护时间，期间预约功能暂停使用，请提前做好安排。</p>
+        <span class="notice-date">发布日期：2026-09-20</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 视图：帮助 ---------- -->
+  <section class="view" data-name="help" id="viewHelp">
+    <h1 class="page-title">❓ 使用帮助</h1>
+    <p class="page-sub">了解座位预约流程与常见问题</p>
+
+    <div class="help-list">
+      <div class="help-card">
+        <h3>① 预约流程</h3>
+        <ul>
+          <li>打开页面先登录校园系统（输入姓名与学号）</li>
+          <li>进入「自习室预约」页面，先选择预约日期（仅当日及未来）</li>
+          <li>选择目标楼层，点击「重新选择偏好」设置学习偏好与专业</li>
+          <li>系统智能推荐合适座位（橙色高亮 + 匹配度），也可手动点选</li>
+          <li>点击「确认预约」完成，同一日期同一座位不可重复预约</li>
+        </ul>
+      </div>
+      <div class="help-card">
+        <h3>② 座位标识说明</h3>
+        <ul>
+          <li>浅绿色为空闲座位，灰色为已占用，绿色为我的选中</li>
+          <li>紫色边框表示该座位配备电源 🔌，适合使用电子设备</li>
+          <li>靠窗座位 🪟 自然光充足，A、B 排为安静区，E 排为讨论区</li>
+          <li>橙色高亮为智能推荐，角标显示与预期条件的匹配度</li>
+        </ul>
+      </div>
+      <div class="help-card">
+        <h3>③ 个人中心与历史</h3>
+        <ul>
+          <li>点击导航「个人中心」可查看个人信息与预约统计</li>
+          <li>历史记录包含每次预约与取消操作，附详细操作时间</li>
+          <li>「我的预约」仅展示当前有效预约，可在此取消</li>
+          <li>取消预约后座位立即释放，可在历史记录中查看取消时间</li>
+        </ul>
+      </div>
+      <div class="help-card">
+        <h3>④ 常见问题</h3>
+        <ul>
+          <li><b>Q：同一天能预约多个座位吗？</b><br>可以，但同一日期同一座位仅能预约一次。</li>
+          <li><b>Q：能预约过去日期吗？</b><br>不能，日期选择器仅允许选择当日及未来日期。</li>
+          <li><b>Q：取消预约有记录吗？</b><br>有，个人中心历史记录会保留取消操作的详细时间。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- 选中浮动提示 -->
+<div class="selected-tip" id="selTip">已选中座位：—</div>
+
+<!-- ========== 登录弹窗 ========== -->
+<div class="modal-mask" id="loginModal">
+  <div class="modal">
+    <h2>🎓 登录校园系统</h2>
+    <p class="desc">请输入姓名与学号，登录后即可预约自习室座位</p>
+
+    <div class="modal-section">
+      <h3>姓名</h3>
+      <input type="text" class="login-input" id="loginName" placeholder="请输入姓名" autocomplete="off">
+    </div>
+
+    <div class="modal-section">
+      <h3>学号</h3>
+      <input type="text" class="login-input" id="loginId" placeholder="请输入学号" autocomplete="off">
+    </div>
+
+    <div class="login-error" id="loginError"></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="btnLogin">登录</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 进入弹窗：偏好/专业选择 ========== -->
+<div class="modal-mask" id="prefModal" style="display:none;">
+  <div class="modal">
+    <h2>🎯 智能选座</h2>
+    <p class="desc">告诉我们你的偏好，为你推荐最合适的座位</p>
+
+    <!-- 偏好标签（可多选） -->
+    <div class="modal-section">
+      <h3>学习偏好（可多选）</h3>
+      <div class="chip-group" id="prefChips">
+        <div class="chip" data-pref="quiet">🤫 安静区</div>
+        <div class="chip" data-pref="window">🪟 靠窗</div>
+        <div class="chip" data-pref="power">🔌 有电源</div>
+        <div class="chip" data-pref="corner">📐 角落（少打扰）</div>
+        <div class="chip" data-pref="group">👥 讨论区</div>
+      </div>
+    </div>
+
+    <!-- 专业选择 -->
+    <div class="modal-section">
+      <h3>你的专业</h3>
+      <select class="major-select" id="majorSelect">
+        <option value="">不指定</option>
+        <option value="cs">计算机 / 软件工程</option>
+        <option value="math">数学 / 统计</option>
+        <option value="literature">文学 / 语言</option>
+        <option value="art">设计 / 艺术</option>
+        <option value="science">理工科其他</option>
+      </select>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnSkip">跳过</button>
+      <button class="btn btn-primary" id="btnRecommend">为我推荐</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 预约结果弹窗（成功/失败通用） ========== -->
+<div class="modal-mask" id="resultModal" style="display:none;">
+  <div class="modal result-modal" id="resultBox">
+    <div class="result-icon" id="resultIcon"></div>
+    <h2 id="resultTitle"></h2>
+    <p class="desc" id="resultDesc"></p>
+    <div class="result-detail" id="resultDetail"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="resultClose">关闭</button>
+      <button class="btn btn-primary" id="resultAction">好的</button>
+    </div>
+  </div>
+</div>
+
+<!-- 引入外部脚本，defer 等待 DOM 解析完成 -->
+<script src="script.js" defer></script>
+</body>
+</html>
