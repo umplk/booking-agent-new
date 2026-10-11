@@ -17,6 +17,13 @@ router = APIRouter(prefix="/api/reservations", tags=["预约管理"])
 VALID_STATUSES = ("pending", "confirmed", "cancelled", "completed")
 
 
+def _to_dict(r: Reservation) -> dict:
+    item = ReservationResponse.model_validate(r).model_dump()
+    item["seat_number"] = r.seat.seat_number if r.seat else None
+    item["room_name"] = r.room.name if r.room else None
+    return item
+
+
 @router.post("", summary="创建预约")
 def create_reservation(
     payload: ReservationCreate,
@@ -79,7 +86,7 @@ def create_reservation(
     db.add(reservation)
     db.commit()
     db.refresh(reservation)
-    return success(data=ReservationResponse.model_validate(reservation).model_dump(), message="预约成功")
+    return success(data=_to_dict(reservation), message="预约成功")
 
 
 @router.get("", summary="列出我的预约")
@@ -97,7 +104,7 @@ def list_my_reservations(
             )
         query = query.filter(Reservation.status == status_filter)
     reservations = query.order_by(Reservation.reservation_date.desc()).all()
-    return success(data=[ReservationResponse.model_validate(r).model_dump() for r in reservations])
+    return success(data=[_to_dict(r) for r in reservations])
 
 
 @router.get("/{reservation_id}", summary="获取预约详情")
@@ -111,7 +118,7 @@ def get_reservation(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="预约不存在")
     if reservation.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权查看该预约")
-    return success(data=ReservationResponse.model_validate(reservation).model_dump())
+    return success(data=_to_dict(reservation))
 
 
 @router.put("/{reservation_id}/cancel", summary="取消预约（仅本人）")
@@ -133,4 +140,4 @@ def cancel_reservation(
     reservation.status = "cancelled"
     db.commit()
     db.refresh(reservation)
-    return success(data=ReservationResponse.model_validate(reservation).model_dump(), message="取消成功")
+    return success(data=_to_dict(reservation), message="取消成功")

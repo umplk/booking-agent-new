@@ -43,7 +43,16 @@ def create_seats(
                 detail=f"座位编号 {item.seat_number} 已存在",
             )
         existing_numbers.add(item.seat_number)
-        seat = Seat(room_id=room_id, seat_number=item.seat_number, is_available=item.is_available)
+        seat = Seat(
+            room_id=room_id,
+            seat_number=item.seat_number,
+            is_available=item.is_available,
+            window=item.window,
+            power=item.power,
+            quiet=item.quiet,
+            is_group=item.is_group,
+            corner=item.corner,
+        )
         db.add(seat)
         new_seats.append(seat)
 

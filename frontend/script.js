@@ -1,9 +1,64 @@
 /* ============================================================
  * 校园图书馆自习室座位预约 - 交互逻辑
- * 原生 JS，无框架；数据为前端模拟，无后端依赖
+ * 原生 JS，无框架；全面对接后端 API
+ * 后端：FastAPI  默认地址 http://127.0.0.1:8000
  * ============================================================ */
 
-/* ---------- 0. 单页视图切换 ---------- */
+/* ---------- 0. API 配置与请求封装 ---------- */
+const API_BASE = 'http://127.0.0.1:8000';
+
+function getToken() {
+  return localStorage.getItem('token') || '';
+}
+function setToken(t) {
+  localStorage.setItem('token', t);
+}
+function clearToken() {
+  localStorage.removeItem('token');
+}
+
+async function apiFetch(path, options) {
+  options = options || {};
+  options.headers = options.headers || {};
+  const token = getToken();
+  if (token) options.headers['Authorization'] = 'Bearer ' + token;
+  if (options.body && typeof options.body !== 'string') {
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(options.body);
+  }
+  let resp;
+  try {
+    resp = await fetch(API_BASE + path, options);
+  } catch (e) {
+    throw { message: '无法连接服务器，请检查后端是否启动' };
+  }
+  let json;
+  try {
+    json = await resp.json();
+  } catch (e) {
+    throw { message: '服务器返回格式错误（HTTP ' + resp.status + '）' };
+  }
+  if (json.code && json.code !== 200) {
+    throw { message: json.message || '请求失败', code: json.code };
+  }
+  if (!resp.ok) {
+    throw { message: json.message || ('HTTP ' + resp.status), code: resp.status };
+  }
+  return json.data;
+}
+
+/* 时间格式化辅助："08:00:00" -> "08:00" */
+function fmtTime(t) {
+  if (!t) return '';
+  return String(t).slice(0, 5);
+}
+/* "2026-10-11T10:30:00" -> "2026-10-11 10:30" */
+function fmtDateTime(dt) {
+  if (!dt) return '';
+  return String(dt).replace('T', ' ').slice(0, 16);
+}
+
+/* ---------- 1. 单页视图切换 ---------- */
 const navLinks = document.querySelectorAll('.nav-menu a');
 const viewEls = document.querySelectorAll('.view');
 
@@ -18,8 +73,8 @@ function switchView(name, linkEl) {
     const match = document.querySelector('.nav-menu a[data-view="' + name + '"]');
     if (match) match.classList.add('active');
   }
-  if (name === 'mine') renderReservations();
-  if (name === 'profile') renderProfile();
+  if (name === 'mine') loadReservations().then(renderReservations);
+  if (name === 'profile') loadReservations().then(renderProfile);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -30,123 +85,243 @@ navLinks.forEach(function (a) {
   });
 });
 
-/* 导航栏用户区点击 -> 个人中心 */
 document.getElementById('navUser').addEventListener('click', function () {
   const link = document.querySelector('.nav-menu a[data-view="profile"]');
   switchView('profile', link);
 });
 
-/* ---------- 1. 登录弹窗 ---------- */
+/* ---------- 2. 登录 / 注册 ---------- */
 const loginModal = document.getElementById('loginModal');
+const registerModal = document.getElementById('registerModal');
 const prefModal = document.getElementById('prefModal');
 let currentUser = null;
 
-document.getElementById('btnLogin').addEventListener('click', function () {
-  const name = document.getElementById('loginName').value.trim();
-  const sid = document.getElementById('loginId').value.trim();
-  const errEl = document.getElementById('loginError');
-
-  if (!name) {
-    errEl.textContent = '请输入姓名';
-    document.getElementById('loginName').focus();
-    return;
-  }
-  if (!sid) {
-    errEl.textContent = '请输入学号';
-    document.getElementById('loginId').focus();
-    return;
-  }
-  if (!/^\d{6,12}$/.test(sid)) {
-    errEl.textContent = '学号应为 6-12 位数字';
-    return;
-  }
-
-  errEl.textContent = '';
-  currentUser = { name: name, sid: sid };
-  document.getElementById('navUserName').textContent = name + ' 同学';
-  document.getElementById('navAvatar').textContent = name.charAt(0);
-
-  loginModal.style.display = 'none';
-  prefModal.style.display = 'flex';
-});
-
-// 回车键登录
-['loginName', 'loginId'].forEach(function (id) {
-  document.getElementById(id).addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') document.getElementById('btnLogin').click();
-  });
-});
-
-/* ---------- 2. 楼层配置 ----------
- * 一楼到五楼分别为不同阅览区，每楼独立座位数据。
- */
-const FLOORS = [
-  {
-    id: 1, name: '1F', icon: '📖', area: '文学阅览区',
-    desc: '中外文学名著 · 散文诗歌 · 适合静心阅读',
-    occupied: ['A1', 'A5', 'B3', 'B8', 'C2', 'C7', 'D4', 'D9', 'E3', 'E6'],
-    allPower: false,
-  },
-  {
-    id: 2, name: '2F', icon: '🔬', area: '理工科阅览区',
-    desc: '数理化 · 工程技术 · 计算机科学文献',
-    occupied: ['A2', 'A6', 'B1', 'B7', 'C4', 'C9', 'D2', 'D8', 'E5', 'E9'],
-    allPower: true,
-  },
-  {
-    id: 3, name: '3F', icon: '🌍', area: '外文阅览区',
-    desc: '英日韩文原版书 · 进口期刊 · 语言学习专区',
-    occupied: ['A3', 'A8', 'B4', 'B9', 'C1', 'C6', 'D3', 'D7', 'E2', 'E8'],
-    allPower: false,
-  },
-  {
-    id: 4, name: '4F', icon: '🏛️', area: '人文社会学科图书阅览区',
-    desc: '历史哲学 · 政治经济 · 社会学法学',
-    occupied: ['A4', 'A9', 'B2', 'B6', 'C5', 'C8', 'D5', 'D1', 'E1', 'E7'],
-    allPower: false,
-  },
-  {
-    id: 5, name: '5F', icon: '💻', area: '电子文献阅览区',
-    desc: '电子数据库 · 在线检索 · 每座配备电源与网口',
-    occupied: ['A1', 'A7', 'B5', 'C3', 'C8', 'D6', 'E4'],
-    allPower: true,
-  },
-];
-
-const ROWS = ['A', 'B', 'C', 'D', 'E'];
-const COLS = 10;
-
-/* 为指定楼层生成座位数据 */
-function buildSeats(floor) {
-  const occ = new Set(floor.occupied);
-  const arr = [];
-  ROWS.forEach(function (r, ri) {
-    for (let c = 1; c <= COLS; c++) {
-      const id = r + c;
-      arr.push({
-        id: id,
-        row: r,
-        col: c,
-        baseOccupied: occ.has(id),
-        window: ri === 0,
-        power: floor.allPower || c % 2 === 0,
-        quiet: ri <= 1,
-        group: ri === ROWS.length - 1,
-        corner: c === 1 || c === COLS,
-      });
-    }
-  });
-  return arr;
+function showLoginError(msg) {
+  document.getElementById('loginError').textContent = msg;
+}
+function showRegError(msg) {
+  document.getElementById('regError').textContent = msg;
 }
 
-const floorSeats = {};
-FLOORS.forEach(function (f) { floorSeats[f.id] = buildSeats(f); });
+document.getElementById('btnGoRegister').addEventListener('click', function () {
+  showLoginError('');
+  loginModal.style.display = 'none';
+  registerModal.style.display = 'flex';
+});
 
-let currentFloorId = 1;
-let seats = floorSeats[currentFloorId];
+document.getElementById('btnBackLogin').addEventListener('click', function () {
+  showRegError('');
+  registerModal.style.display = 'none';
+  loginModal.style.display = 'flex';
+});
 
-/* ---------- 2b. 预约日期选择 ---------- */
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!username) { showLoginError('请输入用户名'); return; }
+  if (!password) { showLoginError('请输入密码'); return; }
+  showLoginError('');
+
+  try {
+    const data = await apiFetch('/api/auth/login', {
+      method: 'POST',
+      body: { username: username, password: password },
+    });
+    setToken(data.access_token);
+    await afterLogin();
+  } catch (e) {
+    showLoginError(e.message || '登录失败');
+  }
+}
+
+document.getElementById('btnLogin').addEventListener('click', doLogin);
+
+['loginUsername', 'loginPassword'].forEach(function (id) {
+  document.getElementById(id).addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') doLogin();
+  });
+});
+
+async function doRegister() {
+  const username = document.getElementById('regUsername').value.trim();
+  const name = document.getElementById('regName').value.trim();
+  const studentId = document.getElementById('regStudentId').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPassword').value;
+
+  if (!username || username.length < 3) { showRegError('用户名至少 3 位'); return; }
+  if (!email) { showRegError('请输入邮箱'); return; }
+  if (!password || password.length < 6) { showRegError('密码至少 6 位'); return; }
+  showRegError('');
+
+  try {
+    await apiFetch('/api/auth/register', {
+      method: 'POST',
+      body: {
+        username: username,
+        email: email,
+        password: password,
+        name: name || null,
+        student_id: studentId || null,
+      },
+    });
+    showRegError('');
+    registerModal.style.display = 'none';
+    document.getElementById('loginUsername').value = username;
+    document.getElementById('loginPassword').value = password;
+    await doLogin();
+  } catch (e) {
+    showRegError(e.message || '注册失败');
+  }
+}
+
+document.getElementById('btnRegister').addEventListener('click', doRegister);
+
+/* 登录成功后的统一流程：拉取用户信息 -> 渲染导航 -> 加载自习室 -> 弹偏好 */
+async function afterLogin() {
+  try {
+    currentUser = await apiFetch('/api/users/me');
+  } catch (e) {
+    clearToken();
+    showLoginError(e.message || '获取用户信息失败');
+    loginModal.style.display = 'flex';
+    return;
+  }
+
+  const displayName = currentUser.name || currentUser.username;
+  document.getElementById('navUserName').textContent = displayName;
+  document.getElementById('navAvatar').textContent = displayName.charAt(0);
+
+  loginModal.style.display = 'none';
+  registerModal.style.display = 'none';
+
+  await loadRooms();
+  prefModal.style.display = 'flex';
+}
+
+/* ---------- 3. 自习室（楼层）数据 ---------- */
+let rooms = [];          // 后端返回的 room 列表
+let currentRoomId = null;
+let seats = [];          // 当前楼层的座位（前端结构）
 let currentDate = '';
+
+const ICON_MAP = [
+  { kw: '文学', icon: '📖' },
+  { kw: '理工', icon: '🔬' },
+  { kw: '外文', icon: '🌍' },
+  { kw: '人文', icon: '🏛️' },
+  { kw: '电子', icon: '💻' },
+];
+
+function roomIcon(name) {
+  for (let i = 0; i < ICON_MAP.length; i++) {
+    if (name.indexOf(ICON_MAP[i].kw) >= 0) return ICON_MAP[i].icon;
+  }
+  return '📚';
+}
+
+function currentRoom() {
+  return rooms.find(function (r) { return r.id === currentRoomId; });
+}
+
+async function loadRooms() {
+  try {
+    const data = await apiFetch('/api/rooms?page=1&page_size=100');
+    rooms = data.items || [];
+  } catch (e) {
+    rooms = [];
+    showResult({
+      type: 'fail',
+      title: '加载自习室失败',
+      desc: e.message || '请检查后端服务',
+    });
+    return;
+  }
+  if (rooms.length === 0) {
+    showResult({
+      type: 'fail',
+      title: '暂无自习室',
+      desc: '后端尚未配置任何自习室，请联系管理员添加。',
+    });
+    return;
+  }
+  currentRoomId = rooms[0].id;
+  await loadSeats();
+  renderFloorTabs();
+  updatePageHead();
+  renderSeats();
+}
+
+/* 加载当前楼层的座位基础数据 */
+async function loadSeats() {
+  try {
+    const data = await apiFetch('/api/rooms/' + currentRoomId);
+    seats = (data.seats || []).map(function (s) {
+      const num = s.seat_number;
+      return {
+        seatId: s.id,
+        id: num,
+        row: num.charAt(0),
+        col: parseInt(num.slice(1), 10) || 0,
+        is_available: s.is_available,
+        window: s.window,
+        power: s.power,
+        quiet: s.quiet,
+        group: s.is_group,
+        corner: s.corner,
+        booked: false,
+      };
+    });
+  } catch (e) {
+    seats = [];
+  }
+}
+
+/* ---------- 4. 楼层切换栏渲染 ---------- */
+const floorTabsEl = document.getElementById('floorTabs');
+const pageTitleEl = document.getElementById('pageTitle');
+const pageSubEl = document.getElementById('pageSub');
+
+function renderFloorTabs() {
+  floorTabsEl.innerHTML = '';
+  rooms.forEach(function (r) {
+    const tab = document.createElement('div');
+    tab.className = 'floor-tab' + (r.id === currentRoomId ? ' active' : '');
+    tab.innerHTML =
+      '<span class="ft-icon">' + roomIcon(r.name) + '</span>' +
+      '<span class="ft-name">' + (r.location || r.name) + '</span>' +
+      '<span class="ft-area">' + r.name + '</span>';
+    tab.addEventListener('click', function () { switchFloor(r.id); });
+    floorTabsEl.appendChild(tab);
+  });
+}
+
+async function switchFloor(id) {
+  if (id === currentRoomId) return;
+  currentRoomId = id;
+  selectedId = null;
+  recommendIds.clear();
+  recommendData = {};
+  document.getElementById('btnConfirm').disabled = true;
+  selTip.style.display = 'none';
+  updatePageHead();
+  renderFloorTabs();
+  await loadSeats();
+  if (currentDate) await loadAvailability();
+  renderSeats();
+  renderRecommendPanel();
+}
+
+function updatePageHead() {
+  const r = currentRoom();
+  if (!r) return;
+  pageTitleEl.textContent = (r.location || 'A栋') + ' · ' + r.name;
+  pageSubEl.textContent =
+    '开放时间 ' + fmtTime(r.open_time) + ' - ' + fmtTime(r.close_time) +
+    ' · 预约后15分钟内入座';
+}
+
+/* ---------- 5. 预约日期选择 ---------- */
 const dateInput = document.getElementById('reserveDate');
 const dateHint = document.getElementById('dateHint');
 const roomLock = document.getElementById('roomLock');
@@ -160,16 +335,18 @@ function todayStr() {
 dateInput.min = todayStr();
 dateInput.value = '';
 
-dateInput.addEventListener('change', function () {
+dateInput.addEventListener('change', async function () {
   currentDate = dateInput.value;
   if (currentDate) {
     dateHint.textContent = '已选 ' + currentDate + '，现在可以选择座位';
     dateHint.classList.add('ready');
     roomLock.classList.add('hidden');
+    await loadAvailability();
   } else {
     dateHint.textContent = '请先选择预约日期，再选择座位';
     dateHint.classList.remove('ready');
     roomLock.classList.remove('hidden');
+    seats.forEach(function (s) { s.booked = false; });
   }
   selectedId = null;
   document.getElementById('btnConfirm').disabled = true;
@@ -178,67 +355,40 @@ dateInput.addEventListener('change', function () {
   applyRecommend();
 });
 
-/* 判断某座位在当前日期是否被占用（基础占用 + 我的预约） */
-function seatTaken(s, floorId, date) {
-  if (s.baseOccupied) return true;
-  var fid = floorId !== undefined ? floorId : currentFloorId;
-  var dt = date || currentDate;
-  if (!dt) return false;
-  return myReservations.some(function (r) {
-    return r.floorId === fid && r.id === s.id && r.date === dt && r.status === 'valid';
-  });
+/* 查询当前楼层在当前日期的座位占用情况 */
+async function loadAvailability() {
+  if (!currentRoomId || !currentDate) return;
+  try {
+    const data = await apiFetch(
+      '/api/rooms/' + currentRoomId + '/availability?date=' + currentDate
+    );
+    const bookedMap = {};
+    (data.seats || []).forEach(function (s) {
+      bookedMap[s.seat_id] = (s.booked_slots && s.booked_slots.length > 0);
+    });
+    seats.forEach(function (s) {
+      s.booked = !!bookedMap[s.seatId];
+    });
+  } catch (e) {
+    /* 查询失败时保持原状 */
+  }
 }
 
-/* ---------- 3. 楼层切换栏渲染 ---------- */
-const floorTabsEl = document.getElementById('floorTabs');
-const pageTitleEl = document.getElementById('pageTitle');
-const pageSubEl = document.getElementById('pageSub');
-
-function renderFloorTabs() {
-  floorTabsEl.innerHTML = '';
-  FLOORS.forEach(function (f) {
-    const tab = document.createElement('div');
-    tab.className = 'floor-tab' + (f.id === currentFloorId ? ' active' : '');
-    tab.innerHTML =
-      '<span class="ft-icon">' + f.icon + '</span>' +
-      '<span class="ft-name">' + f.name + '</span>' +
-      '<span class="ft-area">' + f.area + '</span>';
-    tab.addEventListener('click', function () { switchFloor(f.id); });
-    floorTabsEl.appendChild(tab);
-  });
+/* 判断座位是否被占用 */
+function seatTaken(s) {
+  return !s.is_available || s.booked;
 }
 
-function currentFloor() {
-  return FLOORS.find(function (f) { return f.id === currentFloorId; });
-}
-
-function switchFloor(id) {
-  if (id === currentFloorId) return;
-  currentFloorId = id;
-  seats = floorSeats[id];
-  selectedId = null;
-  recommendIds.clear();
-  recommendData = {};
-  document.getElementById('btnConfirm').disabled = true;
-  selTip.style.display = 'none';
-  updatePageHead();
-  renderFloorTabs();
-  renderSeats();
-  renderRecommendPanel();
-}
-
-function updatePageHead() {
-  const f = currentFloor();
-  pageTitleEl.textContent = 'A栋 · ' + f.name + ' · ' + f.area;
-  pageSubEl.textContent = '开放时间 08:00 - 22:00 · ' + f.desc + ' · 预约后15分钟内入座';
-}
-
-/* ---------- 4. 渲染座位网格 ---------- */
+/* ---------- 6. 渲染座位网格 ---------- */
 const roomMap = document.getElementById('roomMap');
 
 function renderSeats() {
   roomMap.innerHTML = '';
-  ROWS.forEach(function (r) {
+  const rowMap = {};
+  seats.forEach(function (s) { rowMap[s.row] = rowMap[s.row] || []; rowMap[s.row].push(s); });
+  const rows = Object.keys(rowMap).sort();
+
+  rows.forEach(function (r) {
     const rowEl = document.createElement('div');
     rowEl.className = 'row';
 
@@ -250,18 +400,17 @@ function renderSeats() {
     const seatsWrap = document.createElement('div');
     seatsWrap.className = 'seats';
 
-    for (let c = 1; c <= COLS; c++) {
-      const id = r + c;
-      const s = seats.find(function (x) { return x.id === id; });
-      const taken = seatTaken(s);
+    const rowSeats = rowMap[r].slice().sort(function (a, b) { return a.col - b.col; });
+    const maxCol = rowSeats.length;
 
+    rowSeats.forEach(function (s, idx) {
+      const taken = seatTaken(s);
       const el = document.createElement('div');
       el.className = 'seat';
-      el.dataset.id = id;
+      el.dataset.id = s.id;
       el.classList.add(taken ? 'occupied' : 'free');
       if (s.power) el.classList.add('has-power');
 
-      // 属性小图标（靠窗/电源）
       let icons = '';
       if (s.window) icons += '🪟';
       if (s.power) icons += '🔌';
@@ -274,7 +423,7 @@ function renderSeats() {
 
       const num = document.createElement('div');
       num.className = 'num';
-      num.textContent = id;
+      num.textContent = s.id;
       el.appendChild(num);
 
       const tag = document.createElement('div');
@@ -282,15 +431,15 @@ function renderSeats() {
       tag.textContent = s.group ? '讨论' : (s.quiet ? '安静' : '');
       el.appendChild(tag);
 
-      el.addEventListener('click', function () { onSeatClick(id, el); });
+      el.addEventListener('click', function () { onSeatClick(s.id, el); });
       seatsWrap.appendChild(el);
 
-      if (c === 5) {
+      if (idx === Math.floor(maxCol / 2) - 1) {
         const aisle = document.createElement('div');
         aisle.className = 'aisle';
         seatsWrap.appendChild(aisle);
       }
-    }
+    });
     rowEl.appendChild(seatsWrap);
     roomMap.appendChild(rowEl);
   });
@@ -298,13 +447,13 @@ function renderSeats() {
   applyRecommend();
 }
 
-/* ---------- 5. 座位点击：选中 / 取消 ---------- */
+/* ---------- 7. 座位点击：选中 / 取消 ---------- */
 let selectedId = null;
 
 function onSeatClick(id, el) {
   if (!currentDate) return;
   const s = seats.find(function (x) { return x.id === id; });
-  if (seatTaken(s)) return;
+  if (!s || seatTaken(s)) return;
 
   document.querySelectorAll('.seat.selected').forEach(function (e) {
     e.classList.remove('selected');
@@ -320,9 +469,9 @@ function onSeatClick(id, el) {
   document.getElementById('btnConfirm').disabled = !selectedId;
 }
 
-/* ---------- 6. 智能推荐（含匹配度） ---------- */
+/* ---------- 8. 智能推荐（含匹配度） ---------- */
 let recommendIds = new Set();
-let recommendData = {}; // id -> { score, total, percent, matched:[] }
+let recommendData = {};
 let currentPrefLabels = [];
 
 const PREF_LABELS = {
@@ -333,7 +482,6 @@ function recommend(prefs, major) {
   recommendIds.clear();
   recommendData = {};
 
-  // 专业 -> 默认偏好补充
   const majorPref = {
     cs: ['power'],
     math: ['quiet'],
@@ -346,21 +494,18 @@ function recommend(prefs, major) {
     majorPref[major].forEach(function (p) { allPrefs.add(p); });
   }
 
-  // 记算预期条件标签（用于面板展示）
   currentPrefLabels = [];
   allPrefs.forEach(function (p) {
     if (PREF_LABELS[p]) currentPrefLabels.push(PREF_LABELS[p]);
   });
 
   const total = allPrefs.size;
-
   if (total === 0) {
     applyRecommend();
     renderRecommendPanel();
     return;
   }
 
-  // 给每个空闲座位打分
   const candidates = seats
     .filter(function (s) { return !seatTaken(s); })
     .map(function (s) {
@@ -395,7 +540,6 @@ function recommend(prefs, major) {
   renderRecommendPanel();
 }
 
-/* 应用推荐高亮到 DOM */
 function applyRecommend() {
   document.querySelectorAll('.seat.recommend').forEach(function (e) {
     e.classList.remove('recommend');
@@ -412,7 +556,6 @@ function applyRecommend() {
   updateStat();
 }
 
-/* 渲染推荐结果面板 */
 function renderRecommendPanel() {
   const panel = document.getElementById('recommendPanel');
   panel.innerHTML = '';
@@ -421,7 +564,6 @@ function renderRecommendPanel() {
     panel.classList.remove('show');
     return;
   }
-
   panel.classList.add('show');
 
   const head = document.createElement('div');
@@ -475,14 +617,12 @@ function renderRecommendPanel() {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     });
-
     list.appendChild(item);
   });
-
   panel.appendChild(list);
 }
 
-/* ---------- 7. 统计 & 提示 ---------- */
+/* ---------- 9. 统计 & 提示 ---------- */
 function updateStat() {
   const free = seats.filter(function (s) { return !seatTaken(s); }).length;
   document.getElementById('statFree').textContent = free;
@@ -493,14 +633,15 @@ function updateStat() {
 const selTip = document.getElementById('selTip');
 function updateTip() {
   if (selectedId) {
-    selTip.textContent = '已选中座位：' + currentFloor().name + ' · ' + selectedId + '（' + currentDate + '）';
+    const r = currentRoom();
+    selTip.textContent = '已选中座位：' + (r ? r.name : '') + ' · ' + selectedId + '（' + currentDate + '）';
     selTip.style.display = 'block';
   } else {
     selTip.style.display = 'none';
   }
 }
 
-/* ---------- 8. 偏好弹窗交互 ---------- */
+/* ---------- 10. 偏好弹窗交互 ---------- */
 const chips = document.querySelectorAll('#prefChips .chip');
 let selectedPrefs = [];
 
@@ -535,9 +676,17 @@ document.getElementById('btnReopen').addEventListener('click', function () {
   prefModal.style.display = 'flex';
 });
 
-/* ---------- 9. 我的预约数据与渲染 ---------- */
+/* ---------- 11. 我的预约数据与渲染 ---------- */
 let myReservations = [];
-let historyRecords = [];
+
+async function loadReservations() {
+  try {
+    myReservations = await apiFetch('/api/reservations?status=all');
+  } catch (e) {
+    myReservations = [];
+  }
+  return myReservations;
+}
 
 function seatAreaText(s) {
   if (s.group) return '讨论区';
@@ -546,27 +695,15 @@ function seatAreaText(s) {
   return '普通区';
 }
 
-function nowText() {
-  const d = new Date();
-  const pad = function (n) { return n < 10 ? '0' + n : '' + n; };
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-    ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-}
-
-function nowTextFull() {
-  const d = new Date();
-  const pad = function (n) { return n < 10 ? '0' + n : '' + n; };
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-    ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
-}
-
 function renderReservations() {
   const listEl = document.getElementById('reservationList');
   const emptyEl = document.getElementById('reservationEmpty');
   const countEl = document.getElementById('resCount');
   listEl.innerHTML = '';
 
-  var validList = myReservations.filter(function (r) { return r.status === 'valid'; });
+  const validList = myReservations.filter(function (r) {
+    return r.status === 'confirmed' || r.status === 'pending';
+  });
   countEl.textContent = validList.length + ' 条预约';
 
   if (validList.length === 0) {
@@ -581,7 +718,9 @@ function renderReservations() {
 
     const seat = document.createElement('div');
     seat.className = 'res-seat';
-    seat.innerHTML = '<span class="rs-floor">' + res.floorName + '</span><span class="rs-id">' + res.id + '</span>';
+    seat.innerHTML =
+      '<span class="rs-floor">' + (res.room_name || '') + '</span>' +
+      '<span class="rs-id">' + (res.seat_number || '') + '</span>';
     card.appendChild(seat);
 
     const info = document.createElement('div');
@@ -591,7 +730,7 @@ function renderReservations() {
     top.className = 'res-top';
     const name = document.createElement('span');
     name.className = 'res-name';
-    name.textContent = res.area + ' · 座位 ' + res.id;
+    name.textContent = (res.room_name || '') + ' · 座位 ' + (res.seat_number || '');
     const badge = document.createElement('span');
     badge.className = 'res-badge valid';
     badge.textContent = '有效';
@@ -600,7 +739,10 @@ function renderReservations() {
 
     const meta = document.createElement('div');
     meta.className = 'res-meta';
-    meta.textContent = '预约日期：' + res.date + ' · 预约时间：' + res.time + ' · 请15分钟内入座';
+    meta.textContent =
+      '预约日期：' + res.reservation_date +
+      ' · 时段：' + fmtTime(res.start_time) + '-' + fmtTime(res.end_time) +
+      ' · 请15分钟内入座';
 
     info.appendChild(top);
     info.appendChild(meta);
@@ -619,22 +761,30 @@ function renderReservations() {
   });
 }
 
-function cancelReservation(res) {
-  res.status = 'cancelled';
-  res.cancelTime = nowTextFull();
-  historyRecords.unshift({
-    type: 'cancel',
-    seatId: res.id,
-    floorName: res.floorName,
-    area: res.area,
-    date: res.date,
-    opTime: res.cancelTime,
-  });
-  if (res.floorId === currentFloorId) {
+async function cancelReservation(res) {
+  try {
+    await apiFetch('/api/reservations/' + res.id + '/cancel', { method: 'PUT' });
+    await loadReservations();
+    if (currentDate) await loadAvailability();
+    renderReservations();
     renderSeats();
-    applyRecommend();
+    showResult({
+      type: 'success',
+      title: '已取消预约',
+      desc: '座位已释放，可在历史记录中查看。',
+      detail: [
+        { k: '自习室', v: res.room_name || '' },
+        { k: '座位编号', v: res.seat_number || '' },
+        { k: '预约日期', v: res.reservation_date },
+      ],
+    });
+  } catch (e) {
+    showResult({
+      type: 'fail',
+      title: '取消失败',
+      desc: e.message || '请稍后重试',
+    });
   }
-  renderReservations();
 }
 
 document.getElementById('btnGoReserve').addEventListener('click', function () {
@@ -642,54 +792,68 @@ document.getElementById('btnGoReserve').addEventListener('click', function () {
   switchView('reserve', link);
 });
 
-/* ---------- 10. 个人中心渲染 ---------- */
+/* ---------- 12. 个人中心渲染 ---------- */
 function renderProfile() {
   if (!currentUser) return;
 
-  document.getElementById('profileAvatar').textContent = currentUser.name.charAt(0);
-  document.getElementById('profileName').textContent = currentUser.name;
-  document.getElementById('profileSid').textContent = currentUser.sid;
+  const displayName = currentUser.name || currentUser.username;
+  document.getElementById('profileAvatar').textContent = displayName.charAt(0);
+  document.getElementById('profileName').textContent = displayName;
+  document.getElementById('profileSid').textContent = currentUser.student_id || currentUser.username;
 
-  var total = historyRecords.filter(function (h) { return h.type === 'reserve'; }).length;
-  var valid = myReservations.filter(function (r) { return r.status === 'valid'; }).length;
-  var cancelled = historyRecords.filter(function (h) { return h.type === 'cancel'; }).length;
+  const total = myReservations.length;
+  const valid = myReservations.filter(function (r) {
+    return r.status === 'confirmed' || r.status === 'pending';
+  }).length;
+  const cancelled = myReservations.filter(function (r) {
+    return r.status === 'cancelled';
+  }).length;
 
   document.getElementById('statTotal').textContent = total;
   document.getElementById('statValid').textContent = valid;
   document.getElementById('statCancel').textContent = cancelled;
 
-  var listEl = document.getElementById('historyList');
-  var emptyEl = document.getElementById('historyEmpty');
+  const listEl = document.getElementById('historyList');
+  const emptyEl = document.getElementById('historyEmpty');
   listEl.innerHTML = '';
 
-  if (historyRecords.length === 0) {
+  const sorted = myReservations.slice().sort(function (a, b) {
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+
+  if (sorted.length === 0) {
     emptyEl.classList.remove('hidden');
     return;
   }
   emptyEl.classList.add('hidden');
 
-  historyRecords.forEach(function (h) {
-    var item = document.createElement('div');
+  sorted.forEach(function (r) {
+    const isCancel = r.status === 'cancelled';
+    const item = document.createElement('div');
     item.className = 'history-item';
 
-    var icon = document.createElement('div');
-    icon.className = 'hi-icon ' + h.type;
-    icon.textContent = h.type === 'reserve' ? '✅' : '❌';
+    const icon = document.createElement('div');
+    icon.className = 'hi-icon ' + (isCancel ? 'cancel' : 'reserve');
+    icon.textContent = isCancel ? '❌' : '✅';
 
-    var body = document.createElement('div');
+    const body = document.createElement('div');
     body.className = 'hi-body';
 
-    var title = document.createElement('div');
+    const title = document.createElement('div');
     title.className = 'hi-title';
-    if (h.type === 'reserve') {
-      title.innerHTML = '预约座位 <span class="hi-seat">' + h.floorName + ' · ' + h.seatId + '</span>';
+    const seatLabel = (r.room_name || '') + ' · ' + (r.seat_number || '');
+    if (isCancel) {
+      title.innerHTML = '取消预约 <span class="hi-cancel">' + seatLabel + '</span>';
     } else {
-      title.innerHTML = '取消预约 <span class="hi-cancel">' + h.floorName + ' · ' + h.seatId + '</span>';
+      title.innerHTML = '预约座位 <span class="hi-seat">' + seatLabel + '</span>';
     }
 
-    var meta = document.createElement('div');
+    const meta = document.createElement('div');
     meta.className = 'hi-meta';
-    meta.innerHTML = '区域：<b>' + h.area + '</b> · 预约日期：<b>' + h.date + '</b><br>操作时间：<b>' + h.opTime + '</b>';
+    meta.innerHTML =
+      '预约日期：<b>' + r.reservation_date + '</b> · 时段：<b>' +
+      fmtTime(r.start_time) + '-' + fmtTime(r.end_time) + '</b><br>' +
+      '状态：<b>' + r.status + '</b> · 创建时间：<b>' + fmtDateTime(r.created_at) + '</b>';
 
     body.appendChild(title);
     body.appendChild(meta);
@@ -699,19 +863,16 @@ function renderProfile() {
   });
 }
 
-/* ---------- 11. 预约结果弹窗 ---------- */
+/* ---------- 13. 预约结果弹窗 ---------- */
 const resultModal = document.getElementById('resultModal');
-const resultIcon = document.getElementById('resultIcon');
-const resultTitle = document.getElementById('resultTitle');
-const resultDesc = document.getElementById('resultDesc');
-const resultDetail = document.getElementById('resultDetail');
 
 function showResult(opt) {
-  resultIcon.className = 'result-icon ' + opt.type;
-  resultIcon.textContent = opt.type === 'success' ? '✅' : '⚠️';
-  resultTitle.textContent = opt.title;
-  resultDesc.textContent = opt.desc;
+  document.getElementById('resultIcon').className = 'result-icon ' + opt.type;
+  document.getElementById('resultIcon').textContent = opt.type === 'success' ? '✅' : '⚠️';
+  document.getElementById('resultTitle').textContent = opt.title;
+  document.getElementById('resultDesc').textContent = opt.desc;
 
+  const resultDetail = document.getElementById('resultDetail');
   resultDetail.innerHTML = '';
   if (opt.detail && opt.detail.length) {
     opt.detail.forEach(function (d) {
@@ -742,23 +903,18 @@ function showResult(opt) {
   resultModal.style.display = 'flex';
 }
 
-/* ---------- 12. 确认预约 ---------- */
-document.getElementById('btnConfirm').addEventListener('click', function () {
+/* ---------- 14. 确认预约 ---------- */
+document.getElementById('btnConfirm').addEventListener('click', async function () {
   if (!selectedId) return;
   if (!currentDate) {
-    showResult({
-      type: 'fail',
-      title: '请先选择日期',
-      desc: '预约前请先在顶部选择预约日期。',
-      actionText: '知道了',
-    });
+    showResult({ type: 'fail', title: '请先选择日期', desc: '预约前请先在顶部选择预约日期。', actionText: '知道了' });
     return;
   }
 
   const s = seats.find(function (x) { return x.id === selectedId; });
   if (!s) return;
-
-  const f = currentFloor();
+  const r = currentRoom();
+  if (!r) return;
 
   if (seatTaken(s)) {
     showResult({
@@ -766,7 +922,7 @@ document.getElementById('btnConfirm').addEventListener('click', function () {
       title: '预约失败',
       desc: '该座位在此日期已被预约，请重新选择。',
       detail: [
-        { k: '所在楼层', v: f.name + ' · ' + f.area },
+        { k: '所在楼层', v: r.name },
         { k: '座位编号', v: selectedId },
         { k: '预约日期', v: currentDate },
         { k: '失败原因', v: '座位已被占用' },
@@ -779,62 +935,83 @@ document.getElementById('btnConfirm').addEventListener('click', function () {
     return;
   }
 
-  const area = seatAreaText(s);
-  const time = nowText();
-  const opTime = nowTextFull();
+  const startTime = fmtTime(r.open_time) + ':00';
+  const endTime = fmtTime(r.close_time) + ':00';
 
-  myReservations.unshift({
-    id: selectedId,
-    floorId: f.id,
-    floorName: f.name,
-    area: f.area,
-    date: currentDate,
-    time: time,
-    status: 'valid',
-  });
+  try {
+    const data = await apiFetch('/api/reservations', {
+      method: 'POST',
+      body: {
+        seat_id: s.seatId,
+        room_id: currentRoomId,
+        reservation_date: currentDate,
+        start_time: startTime,
+        end_time: endTime,
+        status: 'confirmed',
+      },
+    });
 
-  historyRecords.unshift({
-    type: 'reserve',
-    seatId: selectedId,
-    floorName: f.name,
-    area: f.area,
-    date: currentDate,
-    opTime: opTime,
-  });
+    const bookedId = selectedId;
+    const bookedDate = currentDate;
+    selectedId = null;
+    document.getElementById('btnConfirm').disabled = true;
+    selTip.style.display = 'none';
 
-  const bookedId = selectedId;
-  const bookedDate = currentDate;
-  selectedId = null;
-  document.getElementById('btnConfirm').disabled = true;
-  selTip.style.display = 'none';
-  renderSeats();
-  renderReservations();
+    await loadAvailability();
+    await loadReservations();
+    renderSeats();
+    renderReservations();
 
-  showResult({
-    type: 'success',
-    title: '预约成功！',
-    desc: '请在 15 分钟内入座，逾期将自动释放。',
-    detail: [
-      { k: '预约人', v: currentUser ? currentUser.name + '（' + currentUser.sid + '）' : '—' },
-      { k: '所在楼层', v: f.name + ' · ' + f.area },
-      { k: '座位编号', v: bookedId },
-      { k: '座位区域', v: area },
-      { k: '预约日期', v: bookedDate },
-      { k: '预约时间', v: time },
-    ],
-    closeText: '查看我的预约',
-    onClose: function () {
-      const link = document.querySelector('.nav-menu a[data-view="mine"]');
-      switchView('mine', link);
-    },
-    actionText: '继续预约',
-  });
+    showResult({
+      type: 'success',
+      title: '预约成功！',
+      desc: '请在 15 分钟内入座，逾期将自动释放。',
+      detail: [
+        { k: '预约人', v: currentUser ? (currentUser.name || currentUser.username) : '—' },
+        { k: '所在楼层', v: r.name },
+        { k: '座位编号', v: bookedId },
+        { k: '座位区域', v: seatAreaText(s) },
+        { k: '预约日期', v: bookedDate },
+        { k: '预约时段', v: fmtTime(r.open_time) + ' - ' + fmtTime(r.close_time) },
+      ],
+      closeText: '查看我的预约',
+      onClose: function () {
+        const link = document.querySelector('.nav-menu a[data-view="mine"]');
+        switchView('mine', link);
+      },
+      actionText: '继续预约',
+    });
+  } catch (e) {
+    showResult({
+      type: 'fail',
+      title: '预约失败',
+      desc: e.message || '请稍后重试',
+      detail: [
+        { k: '所在楼层', v: r.name },
+        { k: '座位编号', v: selectedId },
+        { k: '预约日期', v: currentDate },
+      ],
+      actionText: '重新选择',
+    });
+  }
 });
 
-/* ---------- 13. 初始化 ---------- */
-updatePageHead();
-renderFloorTabs();
-renderSeats();
-renderReservations();
-// 进入页面即弹出登录弹窗（登录成功后再弹偏好弹窗）
-loginModal.style.display = 'flex';
+/* ---------- 15. 初始化 ---------- */
+async function init() {
+  const token = getToken();
+  if (token) {
+    try {
+      currentUser = await apiFetch('/api/users/me');
+      const displayName = currentUser.name || currentUser.username;
+      document.getElementById('navUserName').textContent = displayName;
+      document.getElementById('navAvatar').textContent = displayName.charAt(0);
+      await loadRooms();
+      return;
+    } catch (e) {
+      clearToken();
+    }
+  }
+  loginModal.style.display = 'flex';
+}
+
+init();

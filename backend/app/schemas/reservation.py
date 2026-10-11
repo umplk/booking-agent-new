@@ -26,6 +26,8 @@ class ReservationResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    seat_number: Optional[str] = None
+    room_name: Optional[str] = None
 
 
 class SeatAvailability(BaseModel):

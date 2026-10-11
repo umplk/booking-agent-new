@@ -42,6 +42,11 @@ class SeatBrief(BaseModel):
     id: int
     seat_number: str
     is_available: bool
+    window: bool = False
+    power: bool = False
+    quiet: bool = False
+    is_group: bool = False
+    corner: bool = False
 
 
 class RoomDetailResponse(RoomResponse):

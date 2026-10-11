@@ -139,6 +139,11 @@ def get_availability(
                 "seat_id": s.id,
                 "seat_number": s.seat_number,
                 "is_available": s.is_available,
+                "window": s.window,
+                "power": s.power,
+                "quiet": s.quiet,
+                "is_group": s.is_group,
+                "corner": s.corner,
                 "booked_slots": slots,
             }
         )

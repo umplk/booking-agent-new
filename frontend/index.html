@@ -179,7 +179,7 @@
       <div class="help-card">
         <h3>① 预约流程</h3>
         <ul>
-          <li>打开页面先登录校园系统（输入姓名与学号）</li>
+          <li>打开页面先登录校园系统（输入用户名与密码）</li>
           <li>进入「自习室预约」页面，先选择预约日期（仅当日及未来）</li>
           <li>选择目标楼层，点击「重新选择偏好」设置学习偏好与专业</li>
           <li>系统智能推荐合适座位（橙色高亮 + 匹配度），也可手动点选</li>
@@ -224,22 +224,63 @@
 <div class="modal-mask" id="loginModal">
   <div class="modal">
     <h2>🎓 登录校园系统</h2>
-    <p class="desc">请输入姓名与学号，登录后即可预约自习室座位</p>
+    <p class="desc">请输入用户名和密码登录，登录后即可预约自习室座位</p>
 
     <div class="modal-section">
-      <h3>姓名</h3>
-      <input type="text" class="login-input" id="loginName" placeholder="请输入姓名" autocomplete="off">
+      <h3>用户名</h3>
+      <input type="text" class="login-input" id="loginUsername" placeholder="请输入用户名" autocomplete="off">
     </div>
 
     <div class="modal-section">
-      <h3>学号</h3>
-      <input type="text" class="login-input" id="loginId" placeholder="请输入学号" autocomplete="off">
+      <h3>密码</h3>
+      <input type="password" class="login-input" id="loginPassword" placeholder="请输入密码" autocomplete="off">
     </div>
 
     <div class="login-error" id="loginError"></div>
 
     <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnGoRegister">没有账号？去注册</button>
       <button class="btn btn-primary" id="btnLogin">登录</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 注册弹窗 ========== -->
+<div class="modal-mask" id="registerModal" style="display:none;">
+  <div class="modal">
+    <h2>📝 注册账号</h2>
+    <p class="desc">填写以下信息完成注册</p>
+
+    <div class="modal-section">
+      <h3>用户名</h3>
+      <input type="text" class="login-input" id="regUsername" placeholder="设置用户名（至少3位）" autocomplete="off">
+    </div>
+
+    <div class="modal-section">
+      <h3>姓名</h3>
+      <input type="text" class="login-input" id="regName" placeholder="请输入姓名" autocomplete="off">
+    </div>
+
+    <div class="modal-section">
+      <h3>学号</h3>
+      <input type="text" class="login-input" id="regStudentId" placeholder="请输入学号" autocomplete="off">
+    </div>
+
+    <div class="modal-section">
+      <h3>邮箱</h3>
+      <input type="text" class="login-input" id="regEmail" placeholder="请输入邮箱" autocomplete="off">
+    </div>
+
+    <div class="modal-section">
+      <h3>密码</h3>
+      <input type="password" class="login-input" id="regPassword" placeholder="设置密码（至少6位）" autocomplete="off">
+    </div>
+
+    <div class="login-error" id="regError"></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnBackLogin">返回登录</button>
+      <button class="btn btn-primary" id="btnRegister">注册</button>
     </div>
   </div>
 </div>

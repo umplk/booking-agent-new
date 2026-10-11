@@ -11,6 +11,7 @@ from app.database import Base, engine, SessionLocal
 from app.models import User, Room, Seat, Reservation  # noqa: F401  确保模型被注册
 from app.utils.security import get_password_hash
 from app.routers import auth, users, rooms, seats, reservations
+from app.seed import init_seed_data
 
 logger = logging.getLogger("app")
 
@@ -32,6 +33,13 @@ async def lifespan(app: FastAPI):
             db.add(admin)
             db.commit()
             logger.info("默认管理员已创建: %s", settings.DEFAULT_ADMIN_USERNAME)
+    finally:
+        db.close()
+
+    db = SessionLocal()
+    try:
+        init_seed_data(db)
+        logger.info("种子数据初始化完成")
     finally:
         db.close()
     yield

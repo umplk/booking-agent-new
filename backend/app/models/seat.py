@@ -13,6 +13,11 @@ class Seat(Base):
     room_id = Column(Integer, ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False, index=True)
     seat_number = Column(String(20), nullable=False)
     is_available = Column(Boolean, default=True, nullable=False)
+    window = Column(Boolean, default=False, nullable=False)
+    power = Column(Boolean, default=False, nullable=False)
+    quiet = Column(Boolean, default=False, nullable=False)
+    is_group = Column("is_group", Boolean, default=False, nullable=False)
+    corner = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     room = relationship("Room", back_populates="seats")
