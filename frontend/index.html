@@ -336,6 +336,27 @@
   </div>
 </div>
 
+<!-- ========== AI 智能体交互窗口 ========== -->
+<!-- 悬浮按钮 -->
+<button class="agent-fab" id="agentFab" title="智能助手">🤖</button>
+
+<!-- 聊天面板 -->
+<div class="agent-panel" id="agentPanel">
+  <div class="agent-head">
+    <span class="agent-avatar">🤖</span>
+    <div class="agent-head-info">
+      <b>智能助手</b>
+      <span id="agentStatus">在线 · 帮你选座、查预约</span>
+    </div>
+    <button class="agent-close" id="agentClose" title="收起">✕</button>
+  </div>
+  <div class="agent-msgs" id="agentMsgs"><!-- JS 动态生成 --></div>
+  <div class="agent-input-bar">
+    <input type="text" id="agentInput" placeholder="问点什么吧，例如：帮我找个靠窗的座位" autocomplete="off">
+    <button class="agent-send" id="agentSend">发送</button>
+  </div>
+</div>
+
 <!-- 引入外部脚本，defer 等待 DOM 解析完成 -->
 <script src="script.js" defer></script>
 </body>

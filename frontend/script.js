@@ -1015,3 +1015,142 @@ async function init() {
 }
 
 init();
+
+/* ============================================================
+ * 16. AI 智能体交互窗口（前端占位，后端 agent 接口待接入）
+ * ============================================================ */
+const AGENT_API = '/api/agent/chat';   // 后端 agent 对话接口（待实现）
+const AGENT_DEMO = true;               // 演示模式：后端未就绪时用本地模拟回复
+
+const agentFab = document.getElementById('agentFab');
+const agentPanel = document.getElementById('agentPanel');
+const agentMsgs = document.getElementById('agentMsgs');
+const agentInput = document.getElementById('agentInput');
+const agentSend = document.getElementById('agentSend');
+const agentStatus = document.getElementById('agentStatus');
+const agentClose = document.getElementById('agentClose');
+
+const SUGGESTIONS = [
+  '帮我推荐一个安静靠窗的座位',
+  '今天有哪些空闲座位',
+  '怎么预约座位',
+  '我的预约记录',
+];
+
+/* ---------- 16.1 打开 / 关闭窗口 ---------- */
+function openAgent() {
+  agentPanel.classList.add('show');
+  agentFab.classList.add('open');
+  agentFab.textContent = '✕';
+  if (!agentMsgs.childElementCount) renderSuggestions();
+  setTimeout(function () { agentInput.focus(); }, 60);
+}
+
+function closeAgent() {
+  agentPanel.classList.remove('show');
+  agentFab.classList.remove('open');
+  agentFab.textContent = '🤖';
+}
+
+agentFab.addEventListener('click', function () {
+  agentPanel.classList.contains('show') ? closeAgent() : openAgent();
+});
+agentClose.addEventListener('click', closeAgent);
+
+/* ---------- 16.2 消息渲染 ---------- */
+function appendMsg(role, text) {
+  const div = document.createElement('div');
+  div.className = 'agent-msg ' + role;
+  div.textContent = text;
+  agentMsgs.appendChild(div);
+  agentMsgs.scrollTop = agentMsgs.scrollHeight;
+  return div;
+}
+
+function renderSuggestions() {
+  const wrap = document.createElement('div');
+  wrap.className = 'agent-suggest';
+  SUGGESTIONS.forEach(function (s) {
+    const b = document.createElement('button');
+    b.textContent = s;
+    b.addEventListener('click', function () {
+      agentInput.value = s;
+      sendMessage();
+    });
+    wrap.appendChild(b);
+  });
+  agentMsgs.appendChild(wrap);
+  agentMsgs.scrollTop = agentMsgs.scrollHeight;
+}
+
+/* ---------- 16.3 发送消息 ---------- */
+async function sendMessage() {
+  const text = agentInput.value.trim();
+  if (!text) return;
+  agentInput.value = '';
+  appendMsg('user', text);
+
+  agentSend.disabled = true;
+  agentStatus.textContent = '思考中…';
+  const thinking = appendMsg('bot', '…');
+
+  let reply;
+  try {
+    if (AGENT_DEMO) {
+      await new Promise(function (r) { setTimeout(r, 500); });
+      reply = demoReply(text);
+    } else {
+      const data = await apiFetch(AGENT_API, {
+        method: 'POST',
+        body: { message: text },
+      });
+      reply = (data && (data.reply || data.message)) || '（接口未返回有效内容）';
+    }
+  } catch (e) {
+    reply = '⚠️ 暂时无法连接智能体服务：' + (e.message || '未知错误') +
+      '\n\n这是一次前端演示回复。后端 agent 接口就绪后，将 `AGENT_DEMO` 置为 `false` 即可切换到真实对话。';
+  }
+
+  thinking.textContent = reply;
+  agentStatus.textContent = '在线 · 帮你选座、查预约';
+  agentSend.disabled = false;
+}
+
+agentSend.addEventListener('click', sendMessage);
+agentInput.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') sendMessage();
+});
+
+/* ---------- 16.4 演示模式本地回复（后端未接入时的占位） ---------- */
+function demoReply(text) {
+  const t = text || '';
+  const room = currentRoom();
+  if (t.indexOf('座位') >= 0 || t.indexOf('推荐') >= 0 || t.indexOf('选座') >= 0) {
+    const freeList = seats.filter(function (s) { return !seatTaken(s); }).slice(0, 5);
+    if (freeList.length) {
+      return '为你找到以下空闲座位：\n' +
+        freeList.map(function (s) {
+          return '· ' + (room ? room.name : '') + ' ' + s.id +
+            (s.window ? ' 🪟靠窗' : '') +
+            (s.power ? ' 🔌电源' : '') +
+            (s.quiet ? ' 安静区' : '') +
+            (s.group ? ' 讨论区' : '');
+        }).join('\n') +
+        '\n\n点击座位图上的座位即可选中预约。';
+    }
+    return '当前楼层暂时没有空闲座位，可以切换其他楼层看看～';
+  }
+  if (t.indexOf('预约') >= 0 && t.indexOf('怎么') >= 0) {
+    return '预约步骤很简单：\n① 顶部选择预约日期\n② 选择楼层\n③ 点击空闲座位（或让我推荐）\n④ 点击「确认预约」\n\n预约后请在 15 分钟内入座哦～';
+  }
+  if (t.indexOf('预约记录') >= 0 || t.indexOf('我的预约') >= 0) {
+    if (myReservations.length) {
+      return '你当前有 ' + myReservations.length + ' 条预约记录，可以在「我的预约」页面查看详情。';
+    }
+    return '你暂时还没有预约记录，先去预约一个座位吧～';
+  }
+  if (t.indexOf('你好') >= 0 || t.indexOf('hi') >= 0 || t.indexOf('hello') >= 0) {
+    return '你好呀！我是图书馆智能助手 🤖\n我可以帮你推荐座位、查询空闲情况、解答预约问题。\n目前为前端演示模式，接入后端后我还能直接操作数据库为你服务。';
+  }
+  return '收到你的问题：「' + t + '」\n\n目前处于演示模式，我会在接入后端接口后提供更智能的回答。你可以试着问我：推荐座位、空闲查询、预约流程。';
+}
