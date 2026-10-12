@@ -5,23 +5,11 @@
 - `backend/`：后端（Python + FastAPI + SQLAlchemy + JWT，端口 **8000**）
 - `frontend/`：前端（开发中）
 
-> 本文档面向队友，重点说明 **如何在你自己电脑上把后端跑起来**。有问题先看"常见问题"。
-
 ---
 
-## 一、需要准备的东西
 
-| 软件 | 说明 |
-|------|------|
-| Python 3.10+ | 必装，安装时勾选 "Add to PATH" |
-| MySQL | 必装，版本 5.7+ / 8.x 均可 |
-| Navicat（可选） | 方便导入数据库文件，用命令行也行 |
 
-> 只开发前端、不碰数据库的队友，最好也把后端跑起来，前端才调得通接口。
-
----
-
-## 二、启动后端（完整步骤）
+## 启动后端（完整步骤）
 
 ### 第 1 步：拿到源码
 
@@ -93,37 +81,5 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 默认管理员账号：**admin / admin123**
 
 ---
-
-## 三、常见问题
-
-**Q1：启动报错 `Can't connect to MySQL server on 'localhost'`**
-→ MySQL 服务没开，先在"服务"里启动 MySQL，或启动 Navicat 连接一次确认能连上。
-
-**Q2：启动报错 `Access denied for user 'root'`**
-→ `.env` 里的数据库密码和你 MySQL 的 root 密码不一致，认真检查第 3 步。
-
-**Q3：启动报错 `Unknown database 'study_room_db'`**
-→ 库没建，回到"第 2 步"完成建库。
-
-**Q4：启动报错 `pip 不是内部或外部命令`**
-→ Python 没装好或没勾选 "Add to PATH"，重装 Python 并勾选。
-
-**Q5：占用了 8000 端口**
-→ 换一个端口启动（前端联调时同步改请求地址）：
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8001
-```
-
-**Q6：改了 `.env` 没生效？**
-→ 重启后端，`.env` 只在启动时读取。
-
 ---
 
-## 四、API 说明（简要）
-
-全部接口前缀 `/api`：
-- `POST /api/auth/register`、`POST /api/auth/login`：注册 / 登录
-- `GET /api/rooms`、`GET /api/rooms/{id}/availability`：自习室列表 / 座位的可用情况
-- `POST /api/reservations`、`GET /api/reservations`：创建 / 查看预约
-
-详细接口列表见 `backend/README.md`，或在 `http://localhost:8000/docs` 在线查看。
