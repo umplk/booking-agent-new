@@ -10,7 +10,7 @@ from app.config import settings
 from app.database import Base, engine, SessionLocal
 from app.models import User, Room, Seat, Reservation  # noqa: F401  确保模型被注册
 from app.utils.security import get_password_hash
-from app.routers import auth, users, rooms, seats, reservations
+from app.routers import auth, users, rooms, seats, reservations, agent
 from app.seed import init_seed_data
 
 logger = logging.getLogger("app")
@@ -68,6 +68,7 @@ app.include_router(users.router)
 app.include_router(rooms.router)
 app.include_router(seats.router)
 app.include_router(reservations.router)
+app.include_router(agent.router)
 
 
 @app.exception_handler(HTTPException)

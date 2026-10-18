@@ -1019,8 +1019,17 @@ init();
 /* ============================================================
  * 16. AI 智能体交互窗口（前端占位，后端 agent 接口待接入）
  * ============================================================ */
-const AGENT_API = '/api/agent/chat';   // 后端 agent 对话接口（待实现）
-const AGENT_DEMO = true;               // 演示模式：后端未就绪时用本地模拟回复
+const AGENT_API = '/api/agent/chat';   // 后端 agent 对话接口（SSE 流式）
+const AGENT_DEMO = false;              // 演示模式：后端未就绪时用本地模拟回复
+
+function getAgentSessionId() {
+  let id = localStorage.getItem('agent_session_id');
+  if (!id) {
+    id = 'session_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem('agent_session_id', id);
+  }
+  return id;
+}
 
 const agentFab = document.getElementById('agentFab');
 const agentPanel = document.getElementById('agentPanel');
@@ -1099,21 +1108,72 @@ async function sendMessage() {
     if (AGENT_DEMO) {
       await new Promise(function (r) { setTimeout(r, 500); });
       reply = demoReply(text);
+      thinking.textContent = reply;
     } else {
-      const data = await apiFetch(AGENT_API, {
-        method: 'POST',
-        body: { message: text },
+      reply = await streamChat(text, function (partial) {
+        thinking.textContent = partial;
+        agentMsgs.scrollTop = agentMsgs.scrollHeight;
       });
-      reply = (data && (data.reply || data.message)) || '（接口未返回有效内容）';
     }
   } catch (e) {
-    reply = '⚠️ 暂时无法连接智能体服务：' + (e.message || '未知错误') +
-      '\n\n这是一次前端演示回复。后端 agent 接口就绪后，将 `AGENT_DEMO` 置为 `false` 即可切换到真实对话。';
+    reply = '⚠️ 智能体服务异常：' + (e.message || '未知错误') + '（请确认后端已启动并已配置 DeepSeek API Key）';
+    thinking.textContent = reply;
   }
 
-  thinking.textContent = reply;
   agentStatus.textContent = '在线 · 帮你选座、查预约';
   agentSend.disabled = false;
+}
+
+async function streamChat(text, onPartial) {
+  const token = getToken();
+  const resp = await fetch(API_BASE + AGENT_API, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token,
+    },
+    body: JSON.stringify({ message: text, session_id: getAgentSessionId() }),
+  });
+
+  if (!resp.ok) {
+    let msg = 'HTTP ' + resp.status;
+    try {
+      const j = await resp.json();
+      if (j && j.message) msg = j.message;
+    } catch (e) {}
+    throw { message: msg };
+  }
+  if (!resp.body) throw { message: '浏览器不支持流式响应' };
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let full = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop();
+    for (const part of parts) {
+      const line = part.trim();
+      if (line.indexOf('data:') !== 0) continue;
+      let payload;
+      try {
+        payload = JSON.parse(line.slice(5).trim());
+      } catch (e) {
+        continue;
+      }
+      if (payload.error) throw { message: payload.error };
+      if (payload.content) {
+        full += payload.content;
+        if (onPartial) onPartial(full);
+      }
+      if (payload.done) return full || '（无回复内容）';
+    }
+  }
+  return full || '（无回复内容）';
 }
 
 agentSend.addEventListener('click', sendMessage);
