@@ -1,6 +1,6 @@
 from app.models.user import User
-from app.models.room import Room
-from app.models.seat import Seat
+from app.models.scenario import Scenario
+from app.models.resource import Resource
 from app.models.reservation import Reservation
 
-__all__ = ["User", "Room", "Seat", "Reservation"]
+__all__ = ["User", "Scenario", "Resource", "Reservation"]

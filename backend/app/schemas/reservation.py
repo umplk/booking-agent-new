@@ -1,45 +1,47 @@
-from datetime import datetime, date, time
-from typing import Optional, List
+from datetime import datetime
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
 
 class ReservationCreate(BaseModel):
-    seat_id: int
-    room_id: int
-    reservation_date: date
-    start_time: time
-    end_time: time
-    status: str = Field(default="confirmed", pattern="^(pending|confirmed)$")
+    scenario_id: int
+    resource_id: int
+    start_time: datetime
+    end_time: datetime
 
 
 class ReservationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    scenario_id: int
     user_id: int
-    seat_id: int
-    room_id: int
-    reservation_date: date
-    start_time: time
-    end_time: time
+    resource_id: int
+    start_time: datetime
+    end_time: datetime
     status: str
     created_at: datetime
     updated_at: datetime
-    seat_number: Optional[str] = None
-    room_name: Optional[str] = None
+    scenario_name: Optional[str] = None
+    resource_name: Optional[str] = None
 
 
-class SeatAvailability(BaseModel):
-    seat_id: int
-    seat_number: str
-    is_available: bool
-    booked_slots: List[dict] = []
+class TimeSlot(BaseModel):
+    start: str
+    end: str
 
 
-class AvailabilityResponse(BaseModel):
-    room_id: int
-    date: date
-    open_time: time
-    close_time: time
-    seats: List[SeatAvailability]
+class ResourceAvailability(BaseModel):
+    resource_id: int
+    code: str
+    name: str
+    is_active: bool
+    free_slots: List[TimeSlot] = []
+
+
+class ScenarioAvailability(BaseModel):
+    scenario_id: int
+    date: str
+    free_slots_count: int
+    resources: List[ResourceAvailability]

@@ -8,9 +8,9 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.database import Base, engine, SessionLocal
-from app.models import User, Room, Seat, Reservation  # noqa: F401  确保模型被注册
+from app.models import User, Scenario, Resource, Reservation  # noqa: F401  确保模型被注册
 from app.utils.security import get_password_hash
-from app.routers import auth, users, rooms, seats, reservations, agent
+from app.routers import auth, users, scenarios, resources, reservations
 from app.seed import init_seed_data
 
 logger = logging.getLogger("app")
@@ -46,9 +46,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="自习室预约系统",
-    description="基于 FastAPI + SQLAlchemy + JWT 的自习室座位预约系统",
-    version="1.0.0",
+    title="可配置预约平台",
+    description="基于 FastAPI + SQLAlchemy + JWT 的通用可配置预约平台",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -65,10 +65,9 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(users.router)
-app.include_router(rooms.router)
-app.include_router(seats.router)
+app.include_router(scenarios.router)
+app.include_router(resources.router)
 app.include_router(reservations.router)
-app.include_router(agent.router)
 
 
 @app.exception_handler(HTTPException)
@@ -98,7 +97,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 @app.get("/", tags=["默认"])
 def root():
-    return {"code": 200, "message": "success", "data": "自习室预约系统 API，请访问 /docs 查看文档"}
+    return {"code": 200, "message": "success", "data": "可配置预约平台 API，请访问 /docs 查看文档"}
 
 
 @app.get("/health", tags=["默认"])

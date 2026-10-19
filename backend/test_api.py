@@ -1,75 +1,204 @@
-import subprocess, time, sys, json, urllib.request
+import sys
+import unittest
+from datetime import date, datetime, time, timedelta
 
-proc = subprocess.Popen(
-    [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8765"],
-    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+from fastapi import HTTPException
+
+from app import models  # noqa: F401
+from app.database import Base
+from app.models.resource import Resource
+from app.models.scenario import Scenario
+from app.models.user import User
+from app.services.booking_service import (
+    cancel_reservation,
+    create_reservation,
+    query_availability,
 )
-time.sleep(6)
 
-def api(method, path, body=None, token=None):
-    url = f"http://127.0.0.1:8765{path}"
-    data = json.dumps(body).encode() if body else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Content-Type", "application/json")
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
-    try:
-        with urllib.request.urlopen(req) as resp:
-            return resp.status, json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read())
+engine = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-try:
-    print("=== health ===")
-    print(api("GET", "/health"))
 
-    print("\n=== rooms ===")
-    s, r = api("GET", "/api/rooms?page=1&page_size=10")
-    d = r["data"]
-    print(f"status={s} total={d['total']} items={len(d['items'])}")
-    for rm in d["items"]:
-        print(f"  id={rm['id']} {rm['name']}")
+def days(n):
+    return (date.today() + timedelta(days=n)).isoformat()
 
-    print("\n=== seats room 1 ===")
-    s, r = api("GET", "/api/rooms/1/seats")
-    seats = r["data"]
-    print(f"status={s} count={len(seats)}")
-    print(f"  first: {seats[0]}")
 
-    print("\n=== availability room 1 ===")
-    s, r = api("GET", "/api/rooms/1/availability?date=2026-10-12")
-    avail = r["data"]
-    print(f"status={s} seats={len(avail['seats'])}")
-    print(f"  first: {avail['seats'][0]}")
+def dt(days_from_now, hh, mm=0):
+    return datetime.combine(date.today() + timedelta(days=days_from_now), time(hh, mm))
 
-    print("\n=== register ===")
-    print(api("POST", "/api/auth/register", {
-        "username": "teststu", "email": "teststu@test.com",
-        "password": "123456", "student_id": "20260001", "name": "测试学生"
-    }))
 
-    print("\n=== login ===")
-    s, r = api("POST", "/api/auth/login", {"username": "teststu", "password": "123456"})
-    token = r["data"]["access_token"]
-    print(f"status={s} token={token[:20]}...")
+class BookingServiceTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        Base.metadata.create_all(bind=engine)
+        db = SessionLocal()
+        cls.s1 = Scenario(
+            name="自习室", time_step_minutes=30, min_duration_minutes=30,
+            max_duration_minutes=240, max_advance_days=30, allow_same_day=True,
+            max_active_per_user=2, cancel_before_minutes=None,
+        )
+        cls.s2 = Scenario(
+            name="会议室", time_step_minutes=30, min_duration_minutes=30,
+            max_duration_minutes=120, max_advance_days=7, allow_same_day=False,
+            max_active_per_user=1, cancel_before_minutes=60,
+        )
+        db.add_all([cls.s1, cls.s2])
+        db.flush()
+        cls.r1 = Resource(scenario_id=cls.s1.id, name="A1", code="1F-A1",
+                          open_start=time(8, 0), open_end=time(22, 0))
+        cls.r2 = Resource(scenario_id=cls.s1.id, name="B1", code="1F-B1",
+                          open_start=time(8, 0), open_end=time(18, 0))
+        cls.r3 = Resource(scenario_id=cls.s2.id, name="会议室A", code="M-A",
+                          open_start=time(9, 0), open_end=time(17, 0))
+        db.add_all([cls.r1, cls.r2, cls.r3])
+        cls.u = User(username="u1", email="u1@test.com", password_hash="x", role="student")
+        cls.admin = User(username="admin", email="a@test.com", password_hash="x", role="admin")
+        db.add_all([cls.u, cls.admin])
+        db.commit()
+        db.close()
 
-    print("\n=== create reservation ===")
-    s, r = api("POST", "/api/reservations", {
-        "seat_id": 3, "room_id": 1, "reservation_date": "2026-10-12",
-        "start_time": "09:00:00", "end_time": "12:00:00"
-    }, token)
-    print(f"status={s} {r}")
-    res_id = r["data"]["id"]
+    def setUp(self):
+        self.db = SessionLocal()
+        self.user = self.db.query(User).filter(User.username == "u1").first()
+        self.admin = self.db.query(User).filter(User.username == "admin").first()
+        self.s1 = self.db.query(Scenario).filter(Scenario.name == "自习室").first()
+        self.s2 = self.db.query(Scenario).filter(Scenario.name == "会议室").first()
+        self.r1 = self.db.query(Resource).filter(Resource.name == "A1").first()
+        self.r2 = self.db.query(Resource).filter(Resource.name == "B1").first()
+        self.r3 = self.db.query(Resource).filter(Resource.name == "会议室A").first()
+        self.db.query(models.Reservation).delete()
+        self.db.commit()
 
-    print("\n=== my reservations ===")
-    s, r = api("GET", "/api/reservations", token=token)
-    print(f"status={s} count={len(r['data'])}")
+    def tearDown(self):
+        self.db.close()
 
-    print("\n=== cancel ===")
-    s, r = api("PUT", f"/api/reservations/{res_id}/cancel", token=token)
-    print(f"status={s} status={r['data']['status']}")
+    def test_availability_slots(self):
+        d = query_availability(self.db, self.s1.id, date.today() + timedelta(days=1))
+        by_code = {r.code: r for r in d["resources"]}
+        self.assertEqual(len(by_code["1F-A1"].free_slots), 28)
+        self.assertEqual(len(by_code["1F-B1"].free_slots), 20)
+        self.assertEqual(by_code["1F-A1"].free_slots[0].start, "08:00")
+        self.assertEqual(by_code["1F-A1"].free_slots[-1].end, "22:00")
 
-    print("\nALL DONE")
-finally:
-    proc.terminate()
-    proc.wait()
+    def test_availability_range_filter(self):
+        d = query_availability(
+            self.db, self.s1.id, date.today() + timedelta(days=1),
+            range_start=time(10, 0), range_end=time(12, 0),
+        )
+        by_code = {r.code: r for r in d["resources"]}
+        self.assertEqual(len(by_code["1F-A1"].free_slots), 4)
+
+    def test_create_reservation(self):
+        r = create_reservation(
+            self.db, self.user, self.s1.id, self.r1.id,
+            dt(1, 9, 0), dt(1, 10, 0),
+        )
+        self.assertEqual(r.status, "confirmed")
+        d = query_availability(self.db, self.s1.id, date.today() + timedelta(days=1))
+        by_code = {r.code: r for r in d["resources"]}
+        self.assertNotIn("09:00", [s.start for s in by_code["1F-A1"].free_slots])
+
+    def test_conflict_detection(self):
+        create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(1, 9, 0), dt(1, 10, 0))
+        with self.assertRaises(HTTPException) as ctx:
+            create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(1, 9, 30), dt(1, 10, 30))
+        self.assertEqual(ctx.exception.status_code, 409)
+
+    def test_granularity(self):
+        with self.assertRaises(HTTPException) as ctx:
+            create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(1, 9, 15), dt(1, 10, 0))
+        self.assertIn("粒度", str(ctx.exception.detail))
+
+    def test_duration_not_step(self):
+        with self.assertRaises(HTTPException) as ctx:
+            create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(1, 9, 0), dt(1, 10, 15))
+        self.assertIn("整数倍", str(ctx.exception.detail))
+
+    def test_past_time(self):
+        with self.assertRaises(HTTPException) as ctx:
+            create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(-1, 9, 0), dt(-1, 10, 0))
+        self.assertIn("过去", str(ctx.exception.detail))
+
+    def test_duration_too_long(self):
+        with self.assertRaises(HTTPException) as ctx:
+            create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(1, 9, 0), dt(1, 14, 0))
+        self.assertIn("超过", str(ctx.exception.detail))
+
+    def test_outside_open_window(self):
+        with self.assertRaises(HTTPException) as ctx:
+            create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(1, 7, 0), dt(1, 8, 30))
+        self.assertIn("开放时间", str(ctx.exception.detail))
+        with self.assertRaises(HTTPException):
+            create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(1, 21, 30), dt(1, 23, 0))
+
+    def test_same_day_disabled(self):
+        with self.assertRaises(HTTPException) as ctx:
+            create_reservation(self.db, self.user, self.s2.id, self.r3.id, dt(0, 10, 0), dt(0, 11, 0))
+        self.assertIn("当日预约", str(ctx.exception.detail))
+
+    def test_advance_days_limit(self):
+        with self.assertRaises(HTTPException) as ctx:
+            create_reservation(self.db, self.user, self.s2.id, self.r3.id, dt(8, 10, 0), dt(8, 11, 0))
+        self.assertIn("提前", str(ctx.exception.detail))
+
+    def test_max_active_per_user(self):
+        create_reservation(self.db, self.user, self.s2.id, self.r3.id, dt(1, 10, 0), dt(1, 11, 0))
+        with self.assertRaises(HTTPException) as ctx:
+            create_reservation(self.db, self.user, self.s2.id, self.r3.id, dt(2, 10, 0), dt(2, 11, 0))
+        self.assertIn("同时最多", str(ctx.exception.detail))
+
+    def test_cancel_before_limit(self):
+        r = create_reservation(self.db, self.user, self.s2.id, self.r3.id, dt(1, 10, 0), dt(1, 11, 0))
+        r.start_time = datetime.now() + timedelta(minutes=30)
+        self.db.commit()
+        with self.assertRaises(HTTPException) as ctx:
+            cancel_reservation(self.db, self.user, r.id)
+        self.assertIn("不可取消", str(ctx.exception.detail))
+
+    def test_cancel_and_cancel_again(self):
+        r = create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(3, 9, 0), dt(3, 10, 0))
+        canceled = cancel_reservation(self.db, self.user, r.id)
+        self.assertEqual(canceled.status, "cancelled")
+        with self.assertRaises(HTTPException) as ctx:
+            cancel_reservation(self.db, self.user, r.id)
+        self.assertIn("已取消", str(ctx.exception.detail))
+
+    def test_user_permission(self):
+        r = create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(3, 10, 0), dt(3, 11, 0))
+        other = User(username="u2", email="u2@test.com", password_hash="x", role="student")
+        self.db.add(other)
+        self.db.commit()
+        with self.assertRaises(HTTPException) as ctx:
+            cancel_reservation(self.db, other, r.id)
+        self.assertEqual(ctx.exception.status_code, 403)
+        canceled = cancel_reservation(self.db, self.admin, r.id)
+        self.assertEqual(canceled.status, "cancelled")
+
+
+class AppAssemblyTest(unittest.TestCase):
+    def test_routes_registered(self):
+        from app.main import app
+        paths = {route.path for route in app.routes}
+        for expected in [
+            "/api/auth/login",
+            "/api/users/me",
+            "/api/scenarios",
+            "/api/scenarios/{scenario_id}/availability",
+            "/api/scenarios/{scenario_id}/resources",
+            "/api/reservations",
+            "/api/reservations/{reservation_id}/cancel",
+        ]:
+            self.assertIn(expected, paths)
+
+
+if __name__ == "__main__":
+    suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    sys.exit(0 if result.wasSuccessful() else 1)
