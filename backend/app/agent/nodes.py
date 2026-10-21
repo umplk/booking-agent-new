@@ -5,6 +5,7 @@ from app.agent.classifier import chitchat_reply, detect_intent, extract_request
 from app.agent.tools import (
     cancel_reservation,
     create_reservation,
+    generate_resources,
     list_my_reservations,
     list_scenarios,
     query_availability,
@@ -19,6 +20,7 @@ REQUIRED_SLOTS = {
     "query": ["scenario_id", "date"],
     "list_scenarios": [],
     "list_my": [],
+    "configure": ["scenario_id"],
 }
 
 
@@ -218,6 +220,16 @@ def call_tool(state: dict, config: RunnableConfig) -> dict:
         result = list_scenarios.invoke({})
     elif intent == "list_my":
         result = list_my_reservations.invoke({}, config=c)
+    elif intent == "configure":
+        description = ""
+        for m in reversed(state.get("messages") or []):
+            if getattr(m, "type", "") == "human":
+                description = str(m.content) or ""
+                break
+        result = generate_resources.invoke(
+            {"scenario_id": slots["scenario_id"], "description": description},
+            config=c,
+        )
     else:
         result = "抱歉，我暂时无法处理这个操作。"
     return {"tool_result": result}

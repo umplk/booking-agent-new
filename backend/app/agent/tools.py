@@ -15,6 +15,7 @@ from app.services.booking_service import (
     create_reservation as booking_create,
     query_availability as booking_availability,
 )
+from app.services.resource_generator import generate_resources as _generate_resources_impl
 
 ##庄子欣
 def _parse_date(value: str) -> Optional[date]:
@@ -230,6 +231,34 @@ def cancel_reservation(reservation_id: int, *, config: RunnableConfig) -> str:
         db.close()
 
 
+@tool
+def generate_resources(scenario_id: int, description: str, *, config: RunnableConfig) -> str:
+    """根据自然语言描述在指定场景下批量生成资源。description 例如「5个羽毛球场地，9-22点开放」或「3间会议室」。仅场景拥有者或管理员可操作。"""
+    user_id = config["configurable"].get("user_id")
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return "无法确认登录用户身份，请重新登录后再试。"
+        scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            return f"场景 {scenario_id} 不存在。"
+        if user.role != "admin" and (scenario.owner_id is None or scenario.owner_id != user.id):
+            return "你无权在该场景下生成资源。"
+        created = _generate_resources_impl(db, scenario, description)
+        if not created:
+            return "未生成新资源，可能编号已全部存在。"
+        lines = [f"已在场景「{scenario.name}」下生成 {len(created)} 个资源："]
+        for r in created:
+            lines.append(
+                f"resource_id={r.id} | {r.code} | {r.name} | "
+                f"{r.open_start.strftime('%H:%M')}-{r.open_end.strftime('%H:%M')}"
+            )
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
 TOOLS = [
     get_current_datetime,
     list_scenarios,
@@ -237,4 +266,5 @@ TOOLS = [
     create_reservation,
     list_my_reservations,
     cancel_reservation,
+    generate_resources,
 ]

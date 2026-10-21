@@ -12,6 +12,7 @@ _BOOK = ("约", "订", "book", "create")
 _LIST_SCENARIOS = ("有什么", "有哪些", "列表", "list", "场景")
 _LIST_MY = ("我的预约", "预约记录", "我的订", "订了", "都约了", "预约了哪些")
 _QUERY = ("查", "有没有", "还有", "位置", "时段", "空位", "空闲", "能约吗", "available", "剩")
+_CONFIGURE = ("生成资源", "创建资源", "添加资源", "批量生成", "帮我生成", "新建资源", "生成几个", "创建场景", "新建场景", "配置场景", "生成场地", "生成会议室")
 _CHITCHAT_GREET = ("你好", "hi", "hello", "在吗", "哈喽", "您好")
 _CHITCHAT_THANK = ("谢谢", "感谢", "thx", "多谢", "3q")
 _CHITCHAT_BYE = ("再见", "拜拜", "bye", "回见")
@@ -38,6 +39,8 @@ def detect_intent(text: str) -> str:
         return "list_my"
     if any(k in t for k in _LIST_SCENARIOS):
         return "list_scenarios"
+    if any(k in t for k in _CONFIGURE):
+        return "configure"
     if any(k in t for k in _QUERY):
         return "query"
     if any(k in t for k in _BOOK):
@@ -165,4 +168,4 @@ def chitchat_reply(text: str) -> str:
         return "不客气，还有其他需要帮忙的吗？"
     if any(k in t for k in _CHITCHAT_BYE):
         return "再见，有需要随时找我。"
-    return "我是预约助手，支持：预约（book）、查询时段（query）、查看我的预约（list_my）、取消预约（cancel）。你可以直接告诉我需求，例如「明天自习室能约吗」或「帮我约明天 09:00-10:00 自习室 A1」。"
+    return "我是预约助手，支持：预约（book）、查询时段（query）、查看我的预约（list_my）、取消预约（cancel）、在场景下批量生成资源（configure）。你可以直接告诉我需求，例如「明天自习室能约吗」或「帮我约明天 09:00-10:00 自习室 A1」或「在自习室场景下生成 5 个羽毛球场地」。"

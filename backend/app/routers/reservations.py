@@ -19,6 +19,7 @@ VALID_STATUSES = ("pending", "confirmed", "cancelled", "completed")
 def _to_dict(r: Reservation) -> dict:
     item = ReservationResponse.model_validate(r).model_dump()
     item["resource_name"] = r.resource.name if r.resource else None
+    item["resource_code"] = r.resource.code if r.resource else None
     item["scenario_name"] = r.scenario.name if r.scenario else None
     return item
 

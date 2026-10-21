@@ -50,5 +50,6 @@ class ScenarioResponse(BaseModel):
     max_active_per_user: int
     cancel_before_minutes: Optional[int] = None
     is_active: bool
+    owner_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime

@@ -2,9 +2,11 @@ from datetime import time
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.resource import Resource
 from app.models.reservation import Reservation
 from app.models.scenario import Scenario
+from app.models.user import User
 
 FLOORS = [
     {
@@ -42,6 +44,9 @@ def init_seed_data(db: Session) -> None:
     if db.query(Scenario).first():
         return
 
+    admin = db.query(User).filter(User.username == settings.DEFAULT_ADMIN_USERNAME).first()
+    admin_id = admin.id if admin else None
+
     study_scenario = Scenario(
         name="自习室座位预约",
         description="校园图书馆自习室座位预约，示例场景",
@@ -55,6 +60,7 @@ def init_seed_data(db: Session) -> None:
         max_active_per_user=3,
         cancel_before_minutes=30,
         is_active=True,
+        owner_id=admin_id,
     )
     db.add(study_scenario)
     db.flush()

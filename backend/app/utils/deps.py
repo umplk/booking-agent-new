@@ -51,3 +51,19 @@ def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
             detail="权限不足，需要管理员权限",
         )
     return current_user
+
+
+def get_optional_user(
+    db: Session = Depends(get_db),
+    token: Optional[str] = Depends(oauth2_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> Optional[User]:
+    """与 get_current_user 相同的解析逻辑，但未携带 token 时返回 None 而非抛 401。"""
+    token = token or (credentials.credentials if credentials else None)
+    if not token:
+        return None
+    payload = decode_token(token)
+    if payload is None or payload.get("sub") is None:
+        return None
+    username: str = payload.get("sub")
+    return db.query(User).filter(User.username == username).first()

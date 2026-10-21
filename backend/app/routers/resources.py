@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -6,16 +7,31 @@ from app.models.resource import Resource
 from app.models.scenario import Scenario
 from app.models.user import User
 from app.schemas.resource import ResourceCreate, ResourceUpdate, ResourceResponse
-from app.utils.deps import get_current_admin
+from app.services.resource_generator import generate_resources
+from app.utils.deps import get_current_user
 from app.utils.response import success
 
 router = APIRouter(prefix="/api/scenarios", tags=["资源管理"])
+
+
+class GenerateRequest(BaseModel):
+    description: str = Field(..., min_length=1, description="自然语言描述，如「5个羽毛球场地，9-22点开放」")
 
 
 def _get_scenario(db: Session, scenario_id: int) -> Scenario:
     scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
     if not scenario:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="预约场景不存在")
+    return scenario
+
+
+def _get_scenario_owned(db: Session, scenario_id: int, user: User) -> Scenario:
+    """获取场景并校验当前用户是否为其拥有者（管理员放行）。"""
+    scenario = _get_scenario(db, scenario_id)
+    if user.role == "admin":
+        return scenario
+    if scenario.owner_id is None or scenario.owner_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作该场景下的资源")
     return scenario
 
 
@@ -42,14 +58,14 @@ def list_resources(
     return success(data=data)
 
 
-@router.post("/{scenario_id}/resources", summary="创建资源（仅管理员）")
+@router.post("/{scenario_id}/resources", summary="创建资源")
 def create_resource(
     scenario_id: int,
     payload: ResourceCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    current_user: User = Depends(get_current_user),
 ):
-    _get_scenario(db, scenario_id)
+    _get_scenario_owned(db, scenario_id, current_user)
     if payload.open_start >= payload.open_end:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="开放时间必须早于关闭时间")
     exists = (
@@ -66,14 +82,33 @@ def create_resource(
     return success(data=ResourceResponse.model_validate(resource).model_dump(), message="创建成功")
 
 
-@router.put("/{scenario_id}/resources/{resource_id}", summary="更新资源（仅管理员）")
+@router.post("/{scenario_id}/resources/generate", summary="AI 根据描述批量生成资源")
+def generate_resources_api(
+    scenario_id: int,
+    payload: GenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    scenario = _get_scenario_owned(db, scenario_id, current_user)
+    created = generate_resources(db, scenario, payload.description)
+    if not created:
+        return success(data={"created": [], "count": 0}, message="未生成新资源（编号可能已存在）")
+    data = {
+        "created": [ResourceResponse.model_validate(r).model_dump() for r in created],
+        "count": len(created),
+    }
+    return success(data=data, message=f"已生成 {len(created)} 个资源")
+
+
+@router.put("/{scenario_id}/resources/{resource_id}", summary="更新资源")
 def update_resource(
     scenario_id: int,
     resource_id: int,
     payload: ResourceUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    current_user: User = Depends(get_current_user),
 ):
+    _get_scenario_owned(db, scenario_id, current_user)
     resource = (
         db.query(Resource)
         .filter(Resource.id == resource_id, Resource.scenario_id == scenario_id)
@@ -91,13 +126,14 @@ def update_resource(
     return success(data=ResourceResponse.model_validate(resource).model_dump(), message="更新成功")
 
 
-@router.delete("/{scenario_id}/resources/{resource_id}", summary="删除资源（仅管理员）")
+@router.delete("/{scenario_id}/resources/{resource_id}", summary="删除资源")
 def delete_resource(
     scenario_id: int,
     resource_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    current_user: User = Depends(get_current_user),
 ):
+    _get_scenario_owned(db, scenario_id, current_user)
     resource = (
         db.query(Resource)
         .filter(Resource.id == resource_id, Resource.scenario_id == scenario_id)

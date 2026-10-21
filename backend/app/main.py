@@ -26,6 +26,7 @@ def _ensure_schema_columns() -> None:
     additions = [
         ("min_advance_minutes", "INTEGER NOT NULL DEFAULT 0"),
         ("max_minutes_per_day", "INTEGER"),
+        ("owner_id", "INTEGER"),
     ]
     with engine.begin() as conn:
         for name, ddl in additions:

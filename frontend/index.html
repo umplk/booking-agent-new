@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <!-- 移动端适配 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>校园图书馆 · 自习室座位预约</title>
+<title>预约系统</title>
 <!-- 引入外部样式 -->
 <link rel="stylesheet" href="style.css">
 </head>
@@ -14,12 +14,13 @@
 <nav class="navbar">
   <div class="nav-logo">
     <span class="book">📚</span>
-    <span>校园图书馆</span>
+    <span>预约系统</span>
   </div>
   <ul class="nav-menu">
     <li><a href="#" data-view="reserve" class="active">首页</a></li>
     <li><a href="#" data-view="mine">我的预约</a></li>
     <li><a href="#" data-view="profile">个人中心</a></li>
+    <li id="navAdminItem" style="display:none;"><a href="#" data-view="admin">我的场景</a></li>
     <li><a href="#" data-view="notice">公告</a></li>
     <li><a href="#" data-view="help">帮助</a></li>
   </ul>
@@ -35,18 +36,28 @@
   <!-- ---------- 视图：自习室座位预约 ---------- -->
   <section class="view active" data-name="reserve" id="viewReserve">
 
-    <!-- 预约日期选择 -->
+    <!-- 预约日期与时段选择 -->
     <div class="date-bar">
       <span class="date-label">📅 预约日期</span>
       <input type="date" id="reserveDate" class="date-input">
-      <span class="date-hint" id="dateHint">请先选择预约日期，再选择座位</span>
+      <span class="date-label">⏰ 时段</span>
+      <input type="time" id="reserveStart" class="time-input" value="08:00" step="1800">
+      <span class="time-sep">~</span>
+      <input type="time" id="reserveEnd" class="time-input" value="10:00" step="1800">
+      <span class="date-hint" id="dateHint">请先选择预约日期与时段，再选择座位</span>
+    </div>
+
+    <!-- 场景选择（多场景时显示） -->
+    <div class="scenario-bar" id="scenarioBar" style="display:none;">
+      <span class="date-label">🎯 预约场景</span>
+      <select id="scenarioSelect" class="scenario-select"></select>
     </div>
 
     <!-- 楼层切换 -->
     <div class="floor-tabs" id="floorTabs"><!-- JS 动态生成 --></div>
 
-    <h1 class="page-title" id="pageTitle">A栋 · 1楼 · 文学阅览区</h1>
-    <p class="page-sub" id="pageSub">开放时间 08:00 - 22:00 · 请文明使用，预约后15分钟内入座</p>
+    <h1 class="page-title" id="pageTitle">加载中…</h1>
+    <p class="page-sub" id="pageSub">请选择日期、时段与座位后确认预约</p>
 
     <!-- 图例与统计 -->
     <div class="info-bar">
@@ -214,6 +225,97 @@
     </div>
   </section>
 
+  <!-- ---------- 视图：管理后台（仅管理员） ---------- -->
+  <section class="view" data-name="admin" id="viewAdmin">
+    <h1 class="page-title">⚙️ 管理后台</h1>
+    <p class="page-sub">创建/编辑预约场景、配置资源与预约规则，查看资源可预约状态</p>
+
+    <!-- 场景列表卡片 -->
+    <div class="admin-card">
+      <div class="section-head">
+        <h2>📋 预约场景</h2>
+        <div class="admin-head-actions">
+          <span class="section-count" id="adminScenarioCount">0 个场景</span>
+          <button class="btn btn-primary" id="btnNewScenario">+ 新建场景</button>
+        </div>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>名称</th>
+              <th>步长(分)</th>
+              <th>时长(分)</th>
+              <th>提前预约</th>
+              <th>配额</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="adminScenarioTbody"><!-- JS 动态生成 --></tbody>
+        </table>
+      </div>
+      <div class="admin-empty" id="adminScenarioEmpty">
+        <div class="empty-icon">🗂️</div>
+        <p>暂无预约场景</p>
+        <span>点击右上角「新建场景」创建第一个预约场景</span>
+      </div>
+    </div>
+
+    <!-- 资源管理面板（选中场景后显示） -->
+    <div class="admin-card" id="adminResourcePanel" style="display:none;">
+      <div class="section-head">
+        <h2>📦 资源管理 <span class="admin-sub" id="adminResourceScenarioName"></span></h2>
+        <div class="admin-head-actions">
+          <span class="section-count" id="adminResourceCount">0 个资源</span>
+          <button class="btn btn-ghost" id="btnBackToScenarios">← 返回场景</button>
+          <button class="btn btn-primary" id="btnNewResource">+ 新建资源</button>
+        </div>
+      </div>
+
+      <!-- AI 批量生成资源 -->
+      <div class="admin-gen-bar">
+        <span class="date-label">🤖 AI 生成资源</span>
+        <input type="text" id="adminGenInput" class="form-input" placeholder="描述要生成的资源，如「5个羽毛球场地，9-22点开放」或「3间会议室」">
+        <button class="btn btn-primary" id="btnAiGenerate">生成</button>
+        <span class="admin-avail-hint" id="adminGenHint">由 AI 解析描述并批量创建资源</span>
+      </div>
+
+      <!-- 可用时段查询栏 -->
+      <div class="admin-avail-bar">
+        <span class="date-label">📅 查询日期</span>
+        <input type="date" id="adminAvailDate" class="date-input">
+        <button class="btn btn-ghost" id="btnQueryAvail">查询可预约状态</button>
+        <span class="admin-avail-hint" id="adminAvailHint">选择日期后查看各资源当天空闲时段</span>
+      </div>
+      <div class="admin-avail-result" id="adminAvailResult"><!-- JS 动态生成 --></div>
+
+      <!-- 资源表格 -->
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>编号</th>
+              <th>名称</th>
+              <th>开放时间</th>
+              <th>属性</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="adminResourceTbody"><!-- JS 动态生成 --></tbody>
+        </table>
+      </div>
+      <div class="admin-empty" id="adminResourceEmpty">
+        <div class="empty-icon">📦</div>
+        <p>该场景下暂无资源</p>
+        <span>点击右上角「新建资源」添加可预约资源</span>
+      </div>
+    </div>
+  </section>
+
 </div>
 
 <!-- 选中浮动提示 -->
@@ -332,6 +434,158 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" id="resultClose">关闭</button>
       <button class="btn btn-primary" id="resultAction">好的</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 场景编辑弹窗（分组表单） ========== -->
+<div class="modal-mask" id="scenarioModal" style="display:none;">
+  <div class="modal modal-wide">
+    <h2 id="scenarioModalTitle">新建预约场景</h2>
+    <p class="desc">配置场景基本信息、时间粒度、时长限制、提前预约、配额与取消规则</p>
+    <div class="login-error" id="scenarioFormError"></div>
+
+    <!-- 基本信息 -->
+    <div class="form-group">
+      <h3>基本信息</h3>
+      <div class="form-row">
+        <label>场景名称<span class="req">*</span></label>
+        <input type="text" class="form-input" id="sfName" placeholder="如：自习室座位预约">
+      </div>
+      <div class="form-row">
+        <label>描述</label>
+        <input type="text" class="form-input" id="sfDescription" placeholder="可选">
+      </div>
+      <div class="form-row form-row-inline">
+        <label>是否启用</label>
+        <select class="form-input" id="sfIsActive">
+          <option value="true">启用</option>
+          <option value="false">停用</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 时间粒度 -->
+    <div class="form-group">
+      <h3>时间粒度</h3>
+      <div class="form-row form-row-inline">
+        <label>时段步长(分钟)<span class="req">*</span></label>
+        <input type="number" class="form-input" id="sfTimeStep" min="5" max="240" value="30">
+        <span class="form-tip">预约起止时间需按此步长对齐，可选 5-240</span>
+      </div>
+    </div>
+
+    <!-- 时长限制 -->
+    <div class="form-group">
+      <h3>时长限制</h3>
+      <div class="form-row form-row-inline">
+        <label>最小时长(分钟)<span class="req">*</span></label>
+        <input type="number" class="form-input" id="sfMinDuration" min="5" value="30">
+      </div>
+      <div class="form-row form-row-inline">
+        <label>最大时长(分钟)<span class="req">*</span></label>
+        <input type="number" class="form-input" id="sfMaxDuration" max="1440" value="240">
+        <span class="form-tip">单次预约时长范围，最小≤最大</span>
+      </div>
+    </div>
+
+    <!-- 提前预约 -->
+    <div class="form-group">
+      <h3>提前预约</h3>
+      <div class="form-row form-row-inline">
+        <label>最多提前天数<span class="req">*</span></label>
+        <input type="number" class="form-input" id="sfMaxAdvanceDays" min="0" max="365" value="30">
+      </div>
+      <div class="form-row form-row-inline">
+        <label>至少提前(分钟)</label>
+        <input type="number" class="form-input" id="sfMinAdvanceMinutes" min="0" max="10080" value="0">
+        <span class="form-tip">0 表示可即时预约</span>
+      </div>
+      <div class="form-row form-row-inline">
+        <label>允许当日预约</label>
+        <select class="form-input" id="sfAllowSameDay">
+          <option value="true">允许</option>
+          <option value="false">不允许</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 配额 -->
+    <div class="form-group">
+      <h3>配额</h3>
+      <div class="form-row form-row-inline">
+        <label>每人最大活跃预约数<span class="req">*</span></label>
+        <input type="number" class="form-input" id="sfMaxActivePerUser" min="1" max="100" value="5">
+      </div>
+      <div class="form-row form-row-inline">
+        <label>每人每日上限(分钟)</label>
+        <input type="number" class="form-input" id="sfMaxMinutesPerDay" min="1" max="1440" placeholder="留空表示不限制">
+        <span class="form-tip">留空表示不限制</span>
+      </div>
+    </div>
+
+    <!-- 取消规则 -->
+    <div class="form-group">
+      <h3>取消规则</h3>
+      <div class="form-row form-row-inline">
+        <label>取消需提前(分钟)</label>
+        <input type="number" class="form-input" id="sfCancelBeforeMinutes" min="0" placeholder="留空表示不限制">
+        <span class="form-tip">留空表示不限制</span>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnScenarioCancel">取消</button>
+      <button class="btn btn-primary" id="btnScenarioSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 资源编辑弹窗 ========== -->
+<div class="modal-mask" id="resourceModal" style="display:none;">
+  <div class="modal modal-wide">
+    <h2 id="resourceModalTitle">新建资源</h2>
+    <p class="desc">配置资源基本信息与扩展属性（attributes）</p>
+    <div class="login-error" id="resourceFormError"></div>
+
+    <div class="form-group">
+      <h3>基本信息</h3>
+      <div class="form-row">
+        <label>资源名称<span class="req">*</span></label>
+        <input type="text" class="form-input" id="rfName" placeholder="如：1F 文学阅览区 A1 座位">
+      </div>
+      <div class="form-row form-row-inline">
+        <label>资源编号<span class="req">*</span></label>
+        <input type="text" class="form-input" id="rfCode" placeholder="如：1F-A1，场景内唯一">
+      </div>
+      <div class="form-row form-row-inline">
+        <label>开放起始<span class="req">*</span></label>
+        <input type="time" class="form-input" id="rfOpenStart" value="08:00">
+      </div>
+      <div class="form-row form-row-inline">
+        <label>开放结束<span class="req">*</span></label>
+        <input type="time" class="form-input" id="rfOpenEnd" value="22:00">
+      </div>
+      <div class="form-row form-row-inline">
+        <label>是否启用</label>
+        <select class="form-input" id="rfIsActive">
+          <option value="true">启用</option>
+          <option value="false">停用</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <h3>扩展属性 (attributes)
+        <button class="btn btn-ghost btn-sm" id="btnAddAttr">+ 添加属性</button>
+      </h3>
+      <p class="form-tip">用于资源类型特征描述，如 location/row/col/window/power/quiet/group/corner 等</p>
+      <div id="attrEditor"><!-- JS 动态生成键值对 --></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnResourceCancel">取消</button>
+      <button class="btn btn-primary" id="btnResourceSave">保存</button>
     </div>
   </div>
 </div>
