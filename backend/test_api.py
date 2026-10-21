@@ -194,6 +194,7 @@ class AppAssemblyTest(unittest.TestCase):
             "/api/scenarios/{scenario_id}/resources",
             "/api/reservations",
             "/api/reservations/{reservation_id}/cancel",
+            "/api/agent/chat",
         ]:
             self.assertIn(expected, paths)
 

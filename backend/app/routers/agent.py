@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
 
 from app.agent.graph import graph
@@ -19,7 +19,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(default=None)
 
 
-@router.post("/chat", summary="AI 智能体对话（SSE 流式，支持多轮记忆）")
+@router.post("/chat", summary="AI 智能体对话（SSE，支持多轮记忆）")
 async def chat(req: ChatRequest, current_user: User = Depends(get_current_user)):
     session_id = req.session_id or uuid.uuid4().hex
     user_id = current_user.id
@@ -27,18 +27,18 @@ async def chat(req: ChatRequest, current_user: User = Depends(get_current_user))
     async def event_stream():
         config = {"configurable": {"thread_id": session_id, "user_id": user_id}}
         try:
-            async for chunk in graph.astream(
+            result = await graph.ainvoke(
                 {"messages": [HumanMessage(content=req.message)]},
                 config=config,
-                stream_mode="messages",
-            ):
-                message_chunk, metadata = chunk
-                if not isinstance(message_chunk, AIMessageChunk):
-                    continue
-                content = message_chunk.content
-                if isinstance(content, str) and content:
-                    payload = {"session_id": session_id, "content": content}
-                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            )
+            messages = result.get("messages") or []
+            for m in reversed(messages):
+                if isinstance(m, AIMessage):
+                    content = m.content
+                    if isinstance(content, str) and content:
+                        payload = {"session_id": session_id, "content": content}
+                        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                    break
         except Exception as exc:
             payload = {"session_id": session_id, "error": str(exc)}
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
