@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
@@ -16,9 +17,26 @@ from app.seed import init_seed_data
 logger = logging.getLogger("app")
 
 
+def _ensure_schema_columns() -> None:
+    """对已存在的 scenarios 表幂等补齐新增列（无 alembic 迁移系统的轻量自迁移）。"""
+    insp = inspect(engine)
+    if not insp.has_table("scenarios"):
+        return
+    existing = {c["name"] for c in insp.get_columns("scenarios")}
+    additions = [
+        ("min_advance_minutes", "INTEGER NOT NULL DEFAULT 0"),
+        ("max_minutes_per_day", "INTEGER"),
+    ]
+    with engine.begin() as conn:
+        for name, ddl in additions:
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE scenarios ADD COLUMN {name} {ddl}"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    _ensure_schema_columns()
     db = SessionLocal()
     try:
         admin = db.query(User).filter(User.username == settings.DEFAULT_ADMIN_USERNAME).first()

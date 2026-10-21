@@ -49,6 +49,8 @@ def init_seed_data(db: Session) -> None:
         min_duration_minutes=30,
         max_duration_minutes=240,
         max_advance_days=30,
+        min_advance_minutes=30,
+        max_minutes_per_day=480,
         allow_same_day=True,
         max_active_per_user=3,
         cancel_before_minutes=30,

@@ -45,6 +45,11 @@ def create_reservation(db: Session, current_user: User, scenario_id: int, resour
     if start_time <= now:
         raise _booking_error("不能预约过去的时间")
 
+    if scenario.min_advance_minutes and scenario.min_advance_minutes > 0:
+        advance_minutes = int((start_time - now).total_seconds() // 60)
+        if advance_minutes < scenario.min_advance_minutes:
+            raise _booking_error(f"需至少提前 {scenario.min_advance_minutes} 分钟预约")
+
     max_date = now.date() + timedelta(days=scenario.max_advance_days)
     if start_time.date() > max_date:
         raise _booking_error(f"最多只能提前 {scenario.max_advance_days} 天预约")
@@ -96,6 +101,24 @@ def create_reservation(db: Session, current_user: User, scenario_id: int, resour
     )
     if active_count >= scenario.max_active_per_user:
         raise _booking_error(f"每个用户同时最多预约 {scenario.max_active_per_user} 次")
+
+    if scenario.max_minutes_per_day is not None:
+        day_start = _combine(start_time.date(), time.min)
+        day_end = day_start + timedelta(days=1)
+        day_rows = (
+            db.query(Reservation)
+            .filter(
+                Reservation.user_id == current_user.id,
+                Reservation.scenario_id == scenario_id,
+                Reservation.status == "confirmed",
+                Reservation.start_time >= day_start,
+                Reservation.start_time < day_end,
+            )
+            .all()
+        )
+        used = sum(int((r.end_time - r.start_time).total_seconds() // 60) for r in day_rows)
+        if used + duration_minutes > scenario.max_minutes_per_day:
+            raise _booking_error(f"每日预约总时长不能超过 {scenario.max_minutes_per_day} 分钟")
 
     reservation = Reservation(
         scenario_id=scenario_id,

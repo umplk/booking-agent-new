@@ -181,6 +181,29 @@ class BookingServiceTest(unittest.TestCase):
         canceled = cancel_reservation(self.db, self.admin, r.id)
         self.assertEqual(canceled.status, "cancelled")
 
+    def test_min_advance_minutes(self):
+        self.s1.min_advance_minutes = 2000
+        self.db.commit()
+        try:
+            with self.assertRaises(HTTPException) as ctx:
+                create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(1, 9, 0), dt(1, 10, 0))
+            self.assertIn("至少提前", str(ctx.exception.detail))
+        finally:
+            self.s1.min_advance_minutes = 0
+            self.db.commit()
+
+    def test_max_minutes_per_day(self):
+        self.s1.max_minutes_per_day = 60
+        self.db.commit()
+        try:
+            create_reservation(self.db, self.user, self.s1.id, self.r1.id, dt(1, 9, 0), dt(1, 10, 0))
+            with self.assertRaises(HTTPException) as ctx:
+                create_reservation(self.db, self.user, self.s1.id, self.r2.id, dt(1, 11, 0), dt(1, 11, 30))
+            self.assertIn("每日预约总时长", str(ctx.exception.detail))
+        finally:
+            self.s1.max_minutes_per_day = None
+            self.db.commit()
+
 
 class AppAssemblyTest(unittest.TestCase):
     def test_routes_registered(self):

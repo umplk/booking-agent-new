@@ -74,10 +74,20 @@ def list_scenarios() -> str:
             return "当前没有开放的预约场景。"
         lines = ["开放的预约场景："]
         for s in scenarios:
-            rules = (
-                f"步长{s.time_step_minutes}分钟，时长{s.min_duration_minutes}-{s.max_duration_minutes}分钟，"
-                f"最多提前{s.max_advance_days}天，{'可当日预约' if s.allow_same_day else '不可当日预约'}"
-            )
+            parts = [
+                f"步长{s.time_step_minutes}分钟",
+                f"时长{s.min_duration_minutes}-{s.max_duration_minutes}分钟",
+                f"最多提前{s.max_advance_days}天",
+                "可当日预约" if s.allow_same_day else "不可当日预约",
+                f"每人最多{s.max_active_per_user}个活跃预约",
+            ]
+            if s.min_advance_minutes and s.min_advance_minutes > 0:
+                parts.append(f"至少提前{s.min_advance_minutes}分钟")
+            if s.max_minutes_per_day is not None:
+                parts.append(f"每日每人最多{s.max_minutes_per_day}分钟")
+            if s.cancel_before_minutes is not None:
+                parts.append(f"需提前{s.cancel_before_minutes}分钟取消")
+            rules = "，".join(parts)
             lines.append(f"scenario_id={s.id} | {s.name}" + (f" | {s.description}" if s.description else "") + f" | {rules}")
         return "\n".join(lines)
     finally:
