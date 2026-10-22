@@ -1,13 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import Login from '../views/auth/Login.vue';
 import Register from '../views/auth/Register.vue';
-import Pending from '../views/Pending.vue';
 import UserLayout from '../layouts/UserLayout.vue';
 import UserDashboard from '../views/user/Dashboard.vue';
 import UserBooking from '../views/user/Booking.vue';
 import UserReservations from '../views/user/Reservations.vue';
 import UserScenarios from '../views/user/Scenarios.vue';
 import UserProfile from '../views/user/Profile.vue';
+import MerchantLayout from '../layouts/MerchantLayout.vue';
+import MerchantDashboard from '../views/merchant/Dashboard.vue';
+import MerchantBookings from '../views/merchant/Bookings.vue';
+import MerchantResources from '../views/merchant/Resources.vue';
+import MerchantRules from '../views/merchant/Rules.vue';
+import MerchantScenarios from '../views/merchant/Scenarios.vue';
+import MerchantProfile from '../views/merchant/Profile.vue';
 import { isLoggedIn, isAdmin, useAuth } from '../composables/useAuth.js';
 
 const routes = [
@@ -29,13 +35,14 @@ const routes = [
 
   {
     path: '/merchant',
+    component: MerchantLayout,
     children: [
-      { path: 'dashboard', component: Pending, props: { title: '数据概览' } },
-      { path: 'bookings', component: Pending, props: { title: '预约管理' } },
-      { path: 'resources', component: Pending, props: { title: '资源管理' } },
-      { path: 'rules', component: Pending, props: { title: '预约规则' } },
-      { path: 'scenarios', component: Pending, props: { title: '预约场景' } },
-      { path: 'profile', component: Pending, props: { title: '个人中心' } },
+      { path: 'dashboard', component: MerchantDashboard },
+      { path: 'bookings', component: MerchantBookings },
+      { path: 'resources', component: MerchantResources },
+      { path: 'rules', component: MerchantRules },
+      { path: 'scenarios', component: MerchantScenarios },
+      { path: 'profile', component: MerchantProfile },
     ],
   },
 

@@ -27,3 +27,6 @@ export function mergeSlots(freeSlots) {
 export function statusText(s) {
   return ({ confirmed: '已确认', pending: '待确认', cancelled: '已取消', completed: '已完成' })[s] || s;
 }
+export function statusBadgeClass(s) {
+  return ({ confirmed: 'badge-success', pending: 'badge-warning', cancelled: 'badge-danger', completed: 'badge-info' })[s] || 'badge-info';
+}
