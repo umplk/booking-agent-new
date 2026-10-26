@@ -34,10 +34,51 @@ def _ensure_schema_columns() -> None:
                 conn.execute(text(f"ALTER TABLE scenarios ADD COLUMN {name} {ddl}"))
 
 
+def _relax_user_role_constraint() -> None:
+    """将 users.role 列放宽为 VARCHAR(20)，移除旧 Enum 带来的 CHECK 约束，以支持 merchant 角色。"""
+    insp = inspect(engine)
+    if not insp.has_table("users"):
+        return
+
+    if not settings.is_sqlite:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users MODIFY COLUMN role VARCHAR(20) NOT NULL DEFAULT 'student'"))
+        return
+
+    ccs = insp.get_check_constraints("users")
+    if not any("role" in (cc.get("sqltext") or "") for cc in ccs):
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE _users_new ("
+            "id INTEGER NOT NULL PRIMARY KEY, "
+            "username VARCHAR(50) NOT NULL, "
+            "email VARCHAR(120) NOT NULL, "
+            "password_hash VARCHAR(255) NOT NULL, "
+            "student_id VARCHAR(50), "
+            "name VARCHAR(50), "
+            "role VARCHAR(20) NOT NULL DEFAULT 'student', "
+            "created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL)"
+        ))
+        conn.execute(text(
+            "INSERT INTO _users_new (id, username, email, password_hash, student_id, name, role, created_at, updated_at) "
+            "SELECT id, username, email, password_hash, student_id, name, role, created_at, updated_at FROM users"
+        ))
+        conn.execute(text("DROP TABLE users"))
+        conn.execute(text("ALTER TABLE _users_new RENAME TO users"))
+        conn.execute(text("CREATE UNIQUE INDEX ix_users_username ON users (username)"))
+        conn.execute(text("CREATE UNIQUE INDEX ix_users_email ON users (email)"))
+        conn.execute(text("CREATE INDEX ix_users_student_id ON users (student_id)"))
+        conn.execute(text("CREATE INDEX ix_users_role ON users (role)"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _ensure_schema_columns()
+    _relax_user_role_constraint()
     db = SessionLocal()
     try:
         admin = db.query(User).filter(User.username == settings.DEFAULT_ADMIN_USERNAME).first()
@@ -52,6 +93,23 @@ async def lifespan(app: FastAPI):
             db.add(admin)
             db.commit()
             logger.info("默认管理员已创建: %s", settings.DEFAULT_ADMIN_USERNAME)
+    finally:
+        db.close()
+
+    db = SessionLocal()
+    try:
+        merchant = db.query(User).filter(User.username == settings.DEFAULT_MERCHANT_USERNAME).first()
+        if not merchant:
+            merchant = User(
+                username=settings.DEFAULT_MERCHANT_USERNAME,
+                email="merchant@example.com",
+                password_hash=get_password_hash(settings.DEFAULT_MERCHANT_PASSWORD),
+                name="默认商家",
+                role="merchant",
+            )
+            db.add(merchant)
+            db.commit()
+            logger.info("默认商家已创建: %s", settings.DEFAULT_MERCHANT_USERNAME)
     finally:
         db.close()
 

@@ -20,7 +20,7 @@ async function doLogin() {
   submitting.value = true;
   try {
     const user = await login(u, p);
-    if (user && user.role === 'admin') router.push('/merchant/dashboard');
+    if (user && (user.role === 'admin' || user.role === 'merchant')) router.push('/merchant/dashboard');
     else router.push('/user/dashboard');
   } catch (e) {
     error.value = e.message || '登录失败';

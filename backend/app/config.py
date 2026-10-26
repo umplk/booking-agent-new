@@ -20,6 +20,9 @@ class Settings:
     DEFAULT_ADMIN_USERNAME: str = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
     DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 
+    DEFAULT_MERCHANT_USERNAME: str = os.getenv("DEFAULT_MERCHANT_USERNAME", "merchant")
+    DEFAULT_MERCHANT_PASSWORD: str = os.getenv("DEFAULT_MERCHANT_PASSWORD", "merchant123")
+
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 

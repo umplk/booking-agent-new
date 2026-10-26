@@ -21,6 +21,9 @@ export async function apiFetch(path, options) {
   try { json = await resp.json(); }
   catch (e) { throw { message: '服务器返回格式错误（HTTP ' + resp.status + '）' }; }
   if (json.code && json.code !== 200) throw { message: json.message || '请求失败', code: json.code };
-  if (!resp.ok) throw { message: json.message || ('HTTP ' + resp.status), code: resp.status };
+  if (!resp.ok) {
+    if (resp.status === 401) { clearToken(); if (location.pathname !== '/login') location.href = '/login'; }
+    throw { message: json.message || ('HTTP ' + resp.status), code: resp.status };
+  }
   return json.data;
 }

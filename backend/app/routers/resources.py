@@ -8,7 +8,7 @@ from app.models.scenario import Scenario
 from app.models.user import User
 from app.schemas.resource import ResourceCreate, ResourceUpdate, ResourceResponse
 from app.services.resource_generator import generate_resources
-from app.utils.deps import get_current_user
+from app.utils.deps import get_current_user, get_current_merchant
 from app.utils.response import success
 
 router = APIRouter(prefix="/api/scenarios", tags=["资源管理"])
@@ -63,7 +63,7 @@ def create_resource(
     scenario_id: int,
     payload: ResourceCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_merchant),
 ):
     _get_scenario_owned(db, scenario_id, current_user)
     if payload.open_start >= payload.open_end:
@@ -87,7 +87,7 @@ def generate_resources_api(
     scenario_id: int,
     payload: GenerateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_merchant),
 ):
     scenario = _get_scenario_owned(db, scenario_id, current_user)
     created = generate_resources(db, scenario, payload.description)
@@ -106,7 +106,7 @@ def update_resource(
     resource_id: int,
     payload: ResourceUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_merchant),
 ):
     _get_scenario_owned(db, scenario_id, current_user)
     resource = (
@@ -131,7 +131,7 @@ def delete_resource(
     scenario_id: int,
     resource_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_merchant),
 ):
     _get_scenario_owned(db, scenario_id, current_user)
     resource = (

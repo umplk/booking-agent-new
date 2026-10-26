@@ -40,6 +40,10 @@ export function isAdmin() {
   return state.user && state.user.role === 'admin';
 }
 
+export function isMerchant() {
+  return state.user && (state.user.role === 'merchant' || state.user.role === 'admin');
+}
+
 export function userDisplayName() {
   return state.user ? (state.user.name || state.user.username) : '未登录';
 }

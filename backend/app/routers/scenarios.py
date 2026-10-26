@@ -8,7 +8,7 @@ from app.models.scenario import Scenario
 from app.models.user import User
 from app.schemas.scenario import ScenarioCreate, ScenarioUpdate, ScenarioResponse
 from app.services.booking_service import query_availability
-from app.utils.deps import get_current_user, get_optional_user
+from app.utils.deps import get_current_user, get_current_merchant, get_optional_user
 from app.utils.response import success
 
 router = APIRouter(prefix="/api/scenarios", tags=["预约场景"])
@@ -65,7 +65,7 @@ def get_scenario(scenario_id: int, db: Session = Depends(get_db)):
 def create_scenario(
     payload: ScenarioCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_merchant),
 ):
     if payload.min_duration_minutes > payload.max_duration_minutes:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="最小时长不能大于最大时长")
@@ -81,7 +81,7 @@ def update_scenario(
     scenario_id: int,
     payload: ScenarioUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_merchant),
 ):
     scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
     if not scenario:
@@ -101,7 +101,7 @@ def update_scenario(
 def delete_scenario(
     scenario_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_merchant),
 ):
     scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
     if not scenario:

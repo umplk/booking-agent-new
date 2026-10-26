@@ -59,7 +59,7 @@ def list_my_reservations(
     return success(data=[_to_dict(r) for r in rows])
 
 
-@router.get("/admin", summary="列出所有用户预约（管理员）")
+@router.get("/admin", summary="列出所有用户预约（管理员/商家）")
 def list_all_reservations(
     status_filter: str = Query("all", alias="status"),
     scenario_id: int = Query(None),
@@ -68,9 +68,12 @@ def list_all_reservations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅管理员可访问")
+    if current_user.role not in ("admin", "merchant"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅管理员或商家可访问")
     q = db.query(Reservation)
+    if current_user.role == "merchant":
+        owned_ids = [sid for (sid,) in db.query(Scenario.id).filter(Scenario.owner_id == current_user.id).all()]
+        q = q.filter(Reservation.scenario_id.in_(owned_ids))
     if status_filter != "all":
         if status_filter not in VALID_STATUSES:
             raise HTTPException(
@@ -101,7 +104,13 @@ def get_reservation(
     reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
     if not reservation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="预约不存在")
-    if reservation.user_id != current_user.id and current_user.role != "admin":
+    if reservation.user_id == current_user.id:
+        pass
+    elif current_user.role == "admin":
+        pass
+    elif current_user.role == "merchant" and reservation.scenario and reservation.scenario.owner_id == current_user.id:
+        pass
+    else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权查看该预约")
     return success(data=_to_dict(reservation))
 

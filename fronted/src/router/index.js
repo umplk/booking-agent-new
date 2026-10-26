@@ -14,7 +14,7 @@ import MerchantResources from '../views/merchant/Resources.vue';
 import MerchantRules from '../views/merchant/Rules.vue';
 import MerchantScenarios from '../views/merchant/Scenarios.vue';
 import MerchantProfile from '../views/merchant/Profile.vue';
-import { isLoggedIn, isAdmin, useAuth } from '../composables/useAuth.js';
+import { isLoggedIn, isMerchant, useAuth } from '../composables/useAuth.js';
 
 const routes = [
   { path: '/', redirect: '/login' },
@@ -60,14 +60,14 @@ router.beforeEach((to) => {
 
   if (to.path === '/login' || to.path === '/register') {
     if (logged && auth.user) {
-      return auth.user.role === 'admin' ? '/merchant/dashboard' : '/user/dashboard';
+      return (auth.user.role === 'admin' || auth.user.role === 'merchant') ? '/merchant/dashboard' : '/user/dashboard';
     }
     return true;
   }
 
   if (!logged) return '/login';
 
-  if (to.path.startsWith('/merchant') && !isAdmin()) {
+  if (to.path.startsWith('/merchant') && !isMerchant()) {
     return '/user/dashboard';
   }
 

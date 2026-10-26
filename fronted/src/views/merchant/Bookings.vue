@@ -19,7 +19,7 @@ const filteredList = computed(() => {
 
 async function loadScenarios() {
   try {
-    const data = await apiFetch('/api/scenarios?page=1&page_size=200&include_inactive=true');
+    const data = await apiFetch('/api/scenarios?page=1&page_size=200&mine=true&include_inactive=true');
     scenarios.value = data.items || [];
   } catch (e) { scenarios.value = []; }
 }

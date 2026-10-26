@@ -53,6 +53,16 @@ def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def get_current_merchant(current_user: User = Depends(get_current_user)) -> User:
+    """要求当前用户为商家或管理员（普通用户不可访问商家管理接口）。"""
+    if current_user.role not in ("admin", "merchant"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="权限不足，需要商家权限",
+        )
+    return current_user
+
+
 def get_optional_user(
     db: Session = Depends(get_db),
     token: Optional[str] = Depends(oauth2_scheme),

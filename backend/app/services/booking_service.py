@@ -138,7 +138,13 @@ def cancel_reservation(db: Session, current_user: User, reservation_id: int) -> 
     reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
     if not reservation:
         raise _booking_error("预约不存在")
-    if reservation.user_id != current_user.id and current_user.role != "admin":
+    if reservation.user_id == current_user.id:
+        pass
+    elif current_user.role == "admin":
+        pass
+    elif current_user.role == "merchant" and reservation.scenario and reservation.scenario.owner_id == current_user.id:
+        pass
+    else:
         raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="无权取消该预约")
     if reservation.status == "cancelled":
         raise _booking_error("该预约已取消")
