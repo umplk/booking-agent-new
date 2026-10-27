@@ -10,3 +10,5 @@ class BookingState(TypedDict):
     missing: list
     tool_result: str
     reply: str
+    pending_confirmation: bool
+    confirmed: bool

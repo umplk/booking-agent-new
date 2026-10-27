@@ -4,6 +4,7 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.nodes import (
     ask_missing,
     call_tool,
+    confirm,
     extract_slots,
     respond,
     route_after_intent,
@@ -18,6 +19,7 @@ builder = StateGraph(BookingState)
 builder.add_node("route_intent", route_intent)
 builder.add_node("extract_slots", extract_slots)
 builder.add_node("ask_missing", ask_missing)
+builder.add_node("confirm", confirm)
 builder.add_node("call_tool", call_tool)
 builder.add_node("respond", respond)
 
@@ -30,8 +32,9 @@ builder.add_conditional_edges(
 builder.add_conditional_edges(
     "extract_slots",
     slot_status,
-    {"complete": "call_tool", "missing": "ask_missing"},
+    {"complete": "call_tool", "missing": "ask_missing", "confirm": "confirm"},
 )
+builder.add_edge("confirm", END)
 builder.add_edge("call_tool", "respond")
 builder.add_edge("ask_missing", END)
 builder.add_edge("respond", END)

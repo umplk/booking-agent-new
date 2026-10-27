@@ -93,6 +93,8 @@ class AgentApiTest(unittest.TestCase):
         self.assertIn("资源", text)
         self.assertIn("开始时间", text)
         text = self._chat(f"自习室 A1，{day} 15:00-16:00", session_id="s1")
+        self.assertIn("确认", text)
+        text = self._chat("确认", session_id="s1")
         self.assertIn("预约成功", text)
         text = self._chat("我的预约", session_id="s1")
         self.assertIn("预约号", text)

@@ -108,12 +108,24 @@ class AgentFlowTest(unittest.TestCase):
         reply = self._chat(f"{day} 自习室 A1 预约")
         self.assertIn("开始时间", reply)
         reply = self._chat(f"就自习室 A1，{day} 15:00-16:00")
+        self.assertIn("确认", reply)
+        reply = self._chat("确认")
         self.assertIn("预约成功", reply)
+
+    def test_book_decline_flow(self):
+        day = self._day(4)
+        reply = self._chat(f"帮我约自习室 A1，{day} 15:00-16:00")
+        self.assertIn("确认", reply)
+        reply = self._chat("取消")
+        self.assertIn("已取消本次操作", reply)
 
     def test_conflict_flow(self):
         day = self._day()
         self._chat(f"帮我约自习室 A1，{day} 15:00-16:00")
+        self._chat("确认")
         reply = self._chat(f"再帮我约自习室 A1 {day} 15:00-15:30")
+        self.assertIn("确认", reply)
+        reply = self._chat("确认")
         self.assertIn("已被预约", reply)
 
     def test_query_flow(self):
@@ -125,15 +137,21 @@ class AgentFlowTest(unittest.TestCase):
     def test_list_my_flow(self):
         day = self._day(3)
         self._chat(f"帮我约自习室 A1，{day} 10:00-11:00")
+        self._chat("确认")
         reply = self._chat("查一下我的预约")
         self.assertIn("预约号", reply)
 
     def test_cancel_flow(self):
         day = self._day(3)
         self._chat(f"帮我约自习室 B1，{day} 10:00-11:00")
+        self._chat("确认")
         reply = self._chat("取消预约号 1")
+        self.assertIn("确认", reply)
+        reply = self._chat("确认")
         self.assertIn("成功取消", reply)
         reply = self._chat("取消预约号 1")
+        self.assertIn("确认", reply)
+        reply = self._chat("确认")
         self.assertIn("已取消", reply)
 
     def test_list_scenarios_flow(self):

@@ -79,12 +79,61 @@ def _resolve_resource_id(db, scenario_id, keyword) -> int | None:
     return row.id if row else None
 
 
-def route_intent(state: dict) -> dict:
-    text = ""
+_AFFIRMATIVE_WORDS = (
+    "确认", "确定", "是的", "是", "对的", "对", "好的", "好", "可以", "没问题",
+    "执行", "yes", "y", "ok", "yeah",
+)
+_NEGATIVE_WORDS = (
+    "不", "否", "不要", "不行", "算了", "放弃", "作废", "no", "n", "cancel",
+    "取消",
+)
+_STRONG_CONFIRM_WORDS = ("确认", "确定", "执行")
+
+
+def _is_affirmative(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    has_confirm = any(w in t for w in _STRONG_CONFIRM_WORDS)
+    if not has_confirm and any(w in t for w in _NEGATIVE_WORDS):
+        return False
+    return any(w in t for w in _AFFIRMATIVE_WORDS)
+
+
+def _is_negative(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    if any(w in t for w in _STRONG_CONFIRM_WORDS):
+        return False
+    return any(w in t for w in _NEGATIVE_WORDS)
+
+
+def _last_human_text(state: dict) -> str:
     for m in reversed(state.get("messages") or []):
         if getattr(m, "type", "") == "human":
-            text = str(m.content) or ""
-            break
+            return str(m.content) or ""
+    return ""
+
+
+def route_intent(state: dict) -> dict:
+    if state.get("pending_confirmation"):
+        text = _last_human_text(state)
+        if _is_affirmative(text):
+            return {"pending_confirmation": False, "confirmed": True, "reply": ""}
+        if _is_negative(text):
+            reply = "好的，已取消本次操作。"
+            return {
+                "pending_confirmation": False,
+                "confirmed": False,
+                "intent": "chitchat",
+                "reply": reply,
+                "messages": [AIMessage(content=reply)],
+            }
+        reply = '请明确回复"确认"执行或"取消"放弃。'
+        return {"reply": reply, "messages": [AIMessage(content=reply)]}
+
+    text = _last_human_text(state)
     intent = detect_intent(text)
     prev_intent = state.get("intent")
     if intent == "chitchat" and prev_intent not in (None, "", "chitchat") and state.get("missing"):
@@ -232,12 +281,42 @@ def call_tool(state: dict, config: RunnableConfig) -> dict:
         )
     else:
         result = "抱歉，我暂时无法处理这个操作。"
-    return {"tool_result": result}
+    return {"tool_result": result, "confirmed": False, "pending_confirmation": False}
 
 
 def respond(state: dict) -> dict:
     content = state.get("tool_result") or "处理完成。"
     return {"messages": [AIMessage(content=content)]}
+
+
+def confirm(state: dict) -> dict:
+    intent = state.get("intent")
+    slots = state.get("slots") or {}
+    db = SessionLocal()
+    try:
+        if intent == "book":
+            scenario = db.query(Scenario).filter(Scenario.id == slots.get("scenario_id")).first()
+            resource = db.query(Resource).filter(Resource.id == slots.get("resource_id")).first()
+            scenario_name = scenario.name if scenario else slots.get("scenario_id")
+            resource_name = resource.name if resource else slots.get("resource_id")
+            content = (
+                "请确认以下预约信息：\n"
+                f"  场景：{scenario_name}\n"
+                f"  资源：{resource_name}\n"
+                f"  日期：{slots.get('date')}\n"
+                f"  时间：{slots.get('start_time')} - {slots.get('end_time')}\n\n"
+                '回复"确认"执行预约，"取消"放弃。'
+            )
+        elif intent == "cancel":
+            content = (
+                f"请确认是否取消预约号 {slots.get('reservation_id')}？\n"
+                '回复"确认"执行取消，"取消"放弃。'
+            )
+        else:
+            content = '请确认是否执行该操作？回复"确认"或"取消"。'
+    finally:
+        db.close()
+    return {"pending_confirmation": True, "messages": [AIMessage(content=content)]}
 
 
 def route_after_intent(state: dict) -> str:
@@ -247,4 +326,10 @@ def route_after_intent(state: dict) -> str:
 
 
 def slot_status(state: dict) -> str:
-    return "missing" if state.get("missing") else "complete"
+    if state.get("missing"):
+        return "missing"
+    if state.get("confirmed"):
+        return "complete"
+    if state.get("intent") in ("book", "cancel"):
+        return "confirm"
+    return "complete"
