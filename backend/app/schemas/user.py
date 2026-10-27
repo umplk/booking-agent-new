@@ -10,6 +10,7 @@ class UserRegister(BaseModel):
     password: str = Field(..., min_length=6, max_length=128)
     student_id: Optional[str] = Field(None, max_length=50)
     name: Optional[str] = Field(None, max_length=50)
+    role: str = Field("student", pattern="^(student|merchant)$")
 
 
 class UserLogin(BaseModel):

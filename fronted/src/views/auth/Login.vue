@@ -1,11 +1,12 @@
 <script setup>
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { login, useAuth } from '../../composables/useAuth.js';
+import { login, logout, useAuth } from '../../composables/useAuth.js';
 
 const router = useRouter();
 const auth = useAuth();
 
+const role = ref('student');
 const username = ref('');
 const password = ref('');
 const error = ref('');
@@ -20,7 +21,19 @@ async function doLogin() {
   submitting.value = true;
   try {
     const user = await login(u, p);
-    if (user && (user.role === 'admin' || user.role === 'merchant')) router.push('/merchant/dashboard');
+    if (!user) throw new Error('登录失败');
+    const isMerchantAccount = user.role === 'admin' || user.role === 'merchant';
+    if (role.value === 'merchant' && !isMerchantAccount) {
+      logout();
+      error.value = '该账号不是商家账号，请切换到用户登录';
+      return;
+    }
+    if (role.value === 'student' && isMerchantAccount) {
+      logout();
+      error.value = '该账号是商家账号，请切换到商家登录';
+      return;
+    }
+    if (isMerchantAccount) router.push('/merchant/dashboard');
     else router.push('/user/dashboard');
   } catch (e) {
     error.value = e.message || '登录失败';
@@ -42,6 +55,10 @@ function onKeydown(e) {
         <p>输入账号密码，开启智能预约</p>
       </div>
       <div class="modal-body">
+        <div class="role-tabs">
+          <button class="role-tab" :class="{ active: role === 'student' }" @click="role = 'student'">用户登录</button>
+          <button class="role-tab" :class="{ active: role === 'merchant' }" @click="role = 'merchant'">商家登录</button>
+        </div>
         <div class="form-field">
           <label>用户名</label>
           <input type="text" class="form-input" v-model="username" placeholder="请输入用户名" autocomplete="off" @keydown="onKeydown">
@@ -68,5 +85,26 @@ function onKeydown(e) {
   justify-content: center;
   background: var(--bg);
   padding: 20px;
+}
+.role-tabs {
+  display: flex;
+  background: var(--border-soft);
+  border-radius: var(--r);
+  padding: 4px;
+  margin-bottom: 16px;
+}
+.role-tab {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+  transition: all .15s ease;
+}
+.role-tab.active {
+  background: var(--card);
+  color: var(--primary);
+  box-shadow: var(--shadow-xs);
 }
 </style>
