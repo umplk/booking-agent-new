@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from app.agent.llm import llm
 from app.config import settings
 
+from typing import Literal
+
 _CANCEL = ("取消", "退掉", "不去了", "cancel")
 _BOOK = ("约", "订", "book", "create")
 _LIST_SCENARIOS = ("有什么", "有哪些", "列表", "list", "场景")
@@ -169,3 +171,28 @@ def chitchat_reply(text: str) -> str:
     if any(k in t for k in _CHITCHAT_BYE):
         return "再见，有需要随时找我。"
     return "我是预约助手，支持：预约（book）、查询时段（query）、查看我的预约（list_my）、取消预约（cancel）、在场景下批量生成资源（configure）。你可以直接告诉我需求，例如「明天自习室能约吗」或「帮我约明天 09:00-10:00 自习室 A1」或「在自习室场景下生成 5 个羽毛球场地」。"
+
+class IntentResult(BaseModel):
+    intent: Literal["book", "query", "cancel", "list_my",
+                    "list_scenarios", "configure", "chitchat"]
+
+_INTENT_PROMPT = (
+    "判断用户这句话在预约系统里的意图，只能选一个：\n"
+    "- book: 想预约/订某个资源\n"
+    "- query: 询问某天某时段有没有空位、有没有人预约\n"
+    "- cancel: 取消已有预约\n"
+    "- list_my: 查看自己已有的预约\n"
+    "- list_scenarios: 询问有哪些可预约的场景\n"
+    "- configure: 商家要求生成/新建场景或资源\n"
+    "- chitchat: 打招呼、感谢、与预约无关的闲聊\n"
+    "注意：句子里出现“场景”“预约”等词不代表意图，要看用户真正想做什么。"
+)
+
+def detect_intent_llm(text: str) -> str:
+    if not settings.DEEPSEEK_API_KEY:
+        return detect_intent(text)
+    try:
+        chain = llm.with_structured_output(IntentResult)
+        return chain.invoke(_INTENT_PROMPT + "\n\n用户说：" + text).intent
+    except Exception:
+        return detect_intent(text)

@@ -1,7 +1,7 @@
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 
-from app.agent.classifier import chitchat_reply, detect_intent, extract_request
+from app.agent.classifier import chitchat_reply, detect_intent_llm, extract_request
 from app.agent.tools import (
     cancel_reservation,
     create_reservation,
@@ -134,7 +134,7 @@ def route_intent(state: dict) -> dict:
         return {"reply": reply, "messages": [AIMessage(content=reply)]}
 
     text = _last_human_text(state)
-    intent = detect_intent(text)
+    intent = detect_intent_llm(text)
     prev_intent = state.get("intent")
     if intent == "chitchat" and prev_intent not in (None, "", "chitchat") and state.get("missing"):
         intent = prev_intent
