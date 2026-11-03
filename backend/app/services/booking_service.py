@@ -1,6 +1,7 @@
 from datetime import datetime, time, date, timedelta
 
 from fastapi import HTTPException, status as http_status
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.models.reservation import Reservation
@@ -23,14 +24,24 @@ def _slots_overlap(start: datetime, end: datetime, slot_start: datetime, slot_en
 
 
 def create_reservation(db: Session, current_user: User, scenario_id: int, resource_id: int, start_time: datetime, end_time: datetime) -> Reservation:
+    # 悲观锁：先锁住目标资源行，保证同一资源的预约冲突检查与写入串行化。
+    # 必须作为事务的第一条语句，后续快照读才能看到持锁期间其他事务已提交的数据。
+    try:
+        resource = db.query(Resource).filter(Resource.id == resource_id).with_for_update().first()
+    except OperationalError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="当前预约人数较多，请稍后重试",
+        ) from exc
+
     scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
     if not scenario:
         raise _booking_error("预约场景不存在")
     if not scenario.is_active:
         raise _booking_error("该预约场景未开放")
 
-    resource = db.query(Resource).filter(Resource.id == resource_id, Resource.scenario_id == scenario_id).first()
-    if not resource:
+    if not resource or resource.scenario_id != scenario_id:
         raise _booking_error("资源不存在或不属于该场景")
     if not resource.is_active:
         raise _booking_error("该资源不可用")
@@ -82,6 +93,7 @@ def create_reservation(db: Session, current_user: User, scenario_id: int, resour
             Reservation.start_time < end_time,
             Reservation.end_time > start_time,
         )
+        .with_for_update()
         .first()
     )
     if conflict:
