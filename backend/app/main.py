@@ -27,6 +27,13 @@ def _ensure_schema_columns() -> None:
         ("min_advance_minutes", "INTEGER NOT NULL DEFAULT 0"),
         ("max_minutes_per_day", "INTEGER"),
         ("owner_id", "INTEGER"),
+        ("category", "VARCHAR(30) NOT NULL DEFAULT 'study_room'"),
+        ("icon", "VARCHAR(10) NOT NULL DEFAULT '🎯'"),
+        ("location", "VARCHAR(100)"),
+        ("tags", "VARCHAR(255)"),
+        ("is_featured", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("sort_order", "INTEGER NOT NULL DEFAULT 0"),
+        ("booking_notice", "TEXT"),
     ]
     with engine.begin() as conn:
         for name, ddl in additions:

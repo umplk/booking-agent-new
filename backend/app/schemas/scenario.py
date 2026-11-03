@@ -7,6 +7,13 @@ from pydantic import BaseModel, Field, ConfigDict
 class ScenarioCreate(BaseModel):
     name: str = Field(..., max_length=100)
     description: Optional[str] = None
+    category: str = Field("study_room", max_length=30)
+    icon: str = Field("🎯", max_length=10)
+    location: Optional[str] = Field(None, max_length=100)
+    tags: Optional[str] = Field(None, max_length=255)
+    is_featured: bool = False
+    sort_order: int = Field(0, ge=0, le=9999)
+    booking_notice: Optional[str] = None
     time_step_minutes: int = Field(30, ge=5, le=240)
     min_duration_minutes: int = Field(30, ge=5)
     max_duration_minutes: int = Field(240, le=1440)
@@ -22,6 +29,13 @@ class ScenarioCreate(BaseModel):
 class ScenarioUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
+    category: Optional[str] = Field(None, max_length=30)
+    icon: Optional[str] = Field(None, max_length=10)
+    location: Optional[str] = Field(None, max_length=100)
+    tags: Optional[str] = Field(None, max_length=255)
+    is_featured: Optional[bool] = None
+    sort_order: Optional[int] = Field(None, ge=0, le=9999)
+    booking_notice: Optional[str] = None
     time_step_minutes: Optional[int] = Field(None, ge=5, le=240)
     min_duration_minutes: Optional[int] = Field(None, ge=5)
     max_duration_minutes: Optional[int] = Field(None, le=1440)
@@ -40,6 +54,13 @@ class ScenarioResponse(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
+    category: str
+    icon: str
+    location: Optional[str] = None
+    tags: Optional[str] = None
+    is_featured: bool
+    sort_order: int
+    booking_notice: Optional[str] = None
     time_step_minutes: int
     min_duration_minutes: int
     max_duration_minutes: int

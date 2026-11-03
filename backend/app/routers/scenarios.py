@@ -14,12 +14,17 @@ from app.utils.response import success
 router = APIRouter(prefix="/api/scenarios", tags=["预约场景"])
 
 
-def _check_scenario_owner(scenario: Scenario, user: User) -> None:
-    """校验当前用户是否可管理该场景：owner 匹配或管理员。"""
+def _check_scenario_owner(scenario: Scenario, user: User, db: Session) -> None:
+    """校验当前用户是否可管理该场景：管理员放行；商家可管理平台场景与自己的场景。"""
     if user.role == "admin":
         return
-    if scenario.owner_id is None or scenario.owner_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作该场景")
+    if user.role == "merchant" and (scenario.owner_id is None or scenario.owner_id == user.id):
+        return
+    if user.role == "merchant":
+        owner = db.query(User).filter(User.id == scenario.owner_id).first()
+        if owner is not None and owner.role == "admin":
+            return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作该场景")
 
 
 @router.get("", summary="列出预约场景")
@@ -43,7 +48,12 @@ def list_scenarios(
     if search:
         q = q.filter(Scenario.name.ilike(f"%{search}%"))
     total = q.count()
-    scenarios = q.offset((page - 1) * page_size).limit(page_size).all()
+    scenarios = (
+        q.order_by(Scenario.is_featured.desc(), Scenario.sort_order.asc(), Scenario.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     data = {
         "total": total,
         "page": page,
@@ -86,7 +96,7 @@ def update_scenario(
     scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
     if not scenario:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="预约场景不存在")
-    _check_scenario_owner(scenario, current_user)
+    _check_scenario_owner(scenario, current_user, db)
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(scenario, key, value)
@@ -106,7 +116,7 @@ def delete_scenario(
     scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
     if not scenario:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="预约场景不存在")
-    _check_scenario_owner(scenario, current_user)
+    _check_scenario_owner(scenario, current_user, db)
     db.delete(scenario)
     db.commit()
     return success(message="删除成功")

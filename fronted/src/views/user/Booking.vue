@@ -1,12 +1,13 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { apiFetch } from '../../api/request.js';
 import { showResult } from '../../composables/useResult.js';
 import { useAuth } from '../../composables/useAuth.js';
 import { fmtTime, todayStr, mergeSlots } from '../../composables/useUtils.js';
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuth();
 
 const bookingScenarios = ref([]);
@@ -105,7 +106,9 @@ async function loadBookingScenarios() {
     showResult({ type: 'fail', title: '暂无预约场景', desc: '请先在「预约场景」页创建场景。' });
     return;
   }
-  currentScenario.value = bookingScenarios.value[0];
+  const wanted = parseInt(route.query.scenario, 10);
+  currentScenario.value = bookingScenarios.value.find(s => s.id === wanted) || bookingScenarios.value[0];
+  scenarioSelect.value = currentScenario.value.id;
   await onScenarioReady();
 }
 
@@ -138,6 +141,25 @@ async function loadResources() {
   syncTimeInputs();
 }
 
+const ATTR_LABELS = {
+  location: '位置', row: '排', col: '列', window: '靠窗', power: '电源', quiet: '安静',
+  group: '讨论区', corner: '角落', capacity: '容量', projector: '投影', whiteboard: '白板',
+  video: '视频会议', court: '场地', indoor: '室内', floor: '地板', type: '类型',
+  equipment: '器材', zone: '区域', monitor: '显示器',
+};
+
+function attrEntries(attrs) {
+  return Object.keys(attrs || {})
+    .filter(k => k !== 'row' && k !== 'col')
+    .map(k => {
+      const label = ATTR_LABELS[k] || k;
+      const v = attrs[k];
+      return { k, label: v === true ? label : (v === false ? '' : label + ' ' + v) };
+    })
+    .filter(e => e.label)
+    .slice(0, 6);
+}
+
 function buildSeatsFromFloor() {
   const f = currentFloor.value;
   if (!f) { seats.value = []; return; }
@@ -146,7 +168,7 @@ function buildSeatsFromFloor() {
     const row = a.row || (r.code || '').split('-')[1] || '?';
     const col = a.col || 0;
     return {
-      resourceId: r.id, code: r.code, id: row + (col || ''), row, col,
+      resourceId: r.id, code: r.code, id: row + (col || ''), row, col, attrs: a,
       is_available: r.is_active !== false,
       window: !!a.window, power: !!a.power, quiet: !!a.quiet, group: !!a.group, corner: !!a.corner,
       openStart: fmtTime(r.open_start), openEnd: fmtTime(r.open_end),
@@ -310,8 +332,8 @@ async function confirmBooking() {
 
 onMounted(async () => {
   await loadBookingScenarios();
-  if (bookingScenarios.value.length) {
-    scenarioSelect.value = bookingScenarios.value[0].id;
+  if (currentScenario.value) {
+    scenarioSelect.value = currentScenario.value.id;
   }
 });
 </script>
@@ -399,11 +421,7 @@ onMounted(async () => {
             <div class="rc-head"><span class="rc-code">{{ s.code || s.id }}</span><span class="rc-name">{{ s.id }}</span><span class="badge" :class="seatTaken(s) ? 'badge-danger' : 'badge-success'">{{ seatTaken(s) ? '占用' : '空闲' }}</span></div>
             <div class="rc-meta">开放 {{ s.openStart }}-{{ s.openEnd }}</div>
             <div class="rc-chips">
-              <span class="attr-chip bool-true" v-if="s.window">🪟靠窗</span>
-              <span class="attr-chip bool-true" v-if="s.power">🔌电源</span>
-              <span class="attr-chip bool-true" v-if="s.quiet">安静</span>
-              <span class="attr-chip bool-true" v-if="s.group">讨论</span>
-              <span class="attr-chip bool-true" v-if="s.corner">角落</span>
+              <span class="attr-chip bool-true" v-for="e in attrEntries(s.attrs)" :key="e.k">{{ e.label }}</span>
             </div>
             <div class="rc-slots">
               <template v-if="s.freeSlots && s.freeSlots.length">

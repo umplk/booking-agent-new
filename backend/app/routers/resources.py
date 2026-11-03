@@ -26,13 +26,17 @@ def _get_scenario(db: Session, scenario_id: int) -> Scenario:
 
 
 def _get_scenario_owned(db: Session, scenario_id: int, user: User) -> Scenario:
-    """获取场景并校验当前用户是否为其拥有者（管理员放行）。"""
+    """获取场景并校验当前用户是否可管理：管理员放行；商家可管理平台场景与自己的场景。"""
     scenario = _get_scenario(db, scenario_id)
     if user.role == "admin":
         return scenario
-    if scenario.owner_id is None or scenario.owner_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作该场景下的资源")
-    return scenario
+    if user.role == "merchant":
+        if scenario.owner_id is None or scenario.owner_id == user.id:
+            return scenario
+        owner = db.query(User).filter(User.id == scenario.owner_id).first()
+        if owner is not None and owner.role == "admin":
+            return scenario
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作该场景下的资源")
 
 
 @router.get("/{scenario_id}/resources", summary="列出场景下的资源")

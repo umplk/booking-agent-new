@@ -1,10 +1,12 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { apiFetch } from '../../api/request.js';
 import { showResult } from '../../composables/useResult.js';
 import { openResourceModal } from '../../composables/useResourceModal.js';
 import { fmtTime, mergeSlots } from '../../composables/useUtils.js';
 
+const route = useRoute();
 const scenarios = ref([]);
 const currentScenario = ref(null);
 const scenarioSelect = ref('');
@@ -24,12 +26,13 @@ const filteredList = computed(() => {
 
 async function loadScenarios() {
   try {
-    const data = await apiFetch('/api/scenarios?page=1&page_size=200&mine=true&include_inactive=true');
+    const data = await apiFetch('/api/scenarios?page=1&page_size=200&include_inactive=true');
     scenarios.value = data.items || [];
   } catch (e) { scenarios.value = []; }
   if (scenarios.value.length) {
-    currentScenario.value = scenarios.value[0];
-    scenarioSelect.value = scenarios.value[0].id;
+    const wanted = parseInt(route.query.scenario, 10);
+    currentScenario.value = scenarios.value.find(s => s.id === wanted) || scenarios.value[0];
+    scenarioSelect.value = currentScenario.value.id;
     await loadResources();
   }
 }
