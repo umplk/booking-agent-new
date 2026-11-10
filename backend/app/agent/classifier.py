@@ -50,6 +50,12 @@ def detect_intent(text: str) -> str:
     return "chitchat"
 
 
+def apply_prev_intent(intent: str, prev_intent: Optional[str], missing) -> str:
+    if intent == "chitchat" and prev_intent not in (None, "", "chitchat") and missing:
+        return prev_intent
+    return intent
+
+
 def resolve_relative_date(expr: str, today: Optional[date] = None) -> Optional[str]:
     if not expr:
         return None

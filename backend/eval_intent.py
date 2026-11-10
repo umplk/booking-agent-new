@@ -1,82 +1,141 @@
-"""意图识别评测脚本。放在 backend/ 目录下，运行：python eval_intent.py"""
+"""意图识别评测脚本。
+
+数据文件：仓库根目录 eval/cases.csv（共 210 条，7 类意图各 30 条）。
+split 列把数据固定分为 dev / test（约 7:3）：
+- 调 prompt、改规则时只看 dev；
+- 最终对外报数字只看 test，避免过拟合。
+多轮补充用例（如只回“下午三点”）带 prev_intent 列，评测时复用
+classifier.apply_prev_intent，与 nodes.route_intent 的线上逻辑保持一致。
+
+用法（在 backend/ 目录下运行）：
+    python eval_intent.py                    # 默认 LLM 引擎，只跑 dev
+    python eval_intent.py --split test       # 最终验收，只报测试集
+    python eval_intent.py --split all        # dev / test 分开报
+    python eval_intent.py --engine rule      # 纯关键词规则基线
+    python eval_intent.py --show-error 0     # 打印全部错例
+"""
+import argparse
+import csv
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
-from app.agent.classifier import detect_intent_llm
+from app.agent.classifier import apply_prev_intent, detect_intent, detect_intent_llm
 
-# (用户说的话, 正确意图)
-CASES = [
-    # ---- book 预约（6）----
-    ("帮我约明天9:00-10:00的自习室A1", "book"),
-    ("我想订后天下午两点到四点的会议室", "book"),
-    ("周五晚上7点约个座位，学习两小时", "book"),
-    ("自习室场景明天约一下B1，9:00到11:00", "book"),       # 难：含“场景”
-    ("我想预约明天上午的羽毛球场地", "book"),
-    ("帮我把明天10点的自习室订上", "book"),
-
-    # ---- query 查询空位（6）----
-    ("帮我查一下明天自习室还有空位吗", "query"),
-    ("查一下周三会议室的空闲时段", "query"),
-    ("后天下午会议室能约吗", "query"),
-    ("今天晚上自习室还剩几个位置", "query"),
-    ("帮我看看周六有没有空的羽毛球场", "query"),
-    ("明天9点到11点A1有人预约吗", "query"),               # 难：含“预约”
-
-    # ---- cancel 取消（5）----
-    ("取消预约号3", "cancel"),
-    ("我不去了，帮我退掉明天的自习室", "cancel"),
-    ("把预约号12取消一下", "cancel"),
-    ("明天的会议室我去不了了，帮我取消", "cancel"),
-    ("cancel reservation 5", "cancel"),
-
-    # ---- list_my 我的预约（4）----
-    ("我的预约有哪些", "list_my"),
-    ("帮我看看我都约了什么", "list_my"),
-    ("查一下我的预约记录", "list_my"),
-    ("我订了哪些东西", "list_my"),
-
-    # ---- list_scenarios 场景列表（3）----
-    ("有哪些场景可以预约", "list_scenarios"),
-    ("你们有什么可以约的", "list_scenarios"),
-    ("列出所有场景", "list_scenarios"),
-
-    # ---- configure 生成资源（2）----
-    ("帮我生成5个羽毛球场地", "configure"),
-    ("在自习室场景下新建资源，6个单人座位", "configure"),  # 难：含“场景”
-
-    # ---- chitchat 闲聊（4）----
-    ("你好", "chitchat"),
-    ("谢谢你", "chitchat"),
-    ("今天天气怎么样", "chitchat"),
-    ("你是谁", "chitchat"),
-]
-
+CASES_PATH = Path(__file__).resolve().parents[1] / "eval" / "cases.csv"
+INTENTS = ["book", "query", "cancel", "list_my", "list_scenarios", "configure", "chitchat"]
 MAX_WORKERS = 8
 
-if __name__ == "__main__":
-    start = time.time()
-    results = [None] * len(CASES)
 
+def load_cases():
+    if not CASES_PATH.exists():
+        raise SystemExit(f"找不到评测数据：{CASES_PATH}")
+    with CASES_PATH.open(encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def predict(row, engine):
+    if engine == "rule":
+        got = detect_intent(row["text"])
+    else:
+        got = detect_intent_llm(row["text"])
+    prev_intent = (row.get("prev_intent") or "").strip()
+    if prev_intent:
+        got = apply_prev_intent(got, prev_intent, missing=True)
+    return got
+
+
+def run_suite(rows, engine):
+    results = [None] * len(rows)
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        future_to_idx = {
-            pool.submit(detect_intent_llm, text): idx
-            for idx, (text, _) in enumerate(CASES)
-        }
+        future_to_idx = {pool.submit(predict, row, engine): i for i, row in enumerate(rows)}
         for fut in as_completed(future_to_idx):
             idx = future_to_idx[fut]
             try:
                 results[idx] = fut.result()
             except Exception as exc:
                 results[idx] = f"<error:{exc}>"
+    return results
 
-    ok = 0
-    for (text, want), got in zip(CASES, results):
-        if got == want:
-            ok += 1
-        else:
-            print(f"错：{text}\n    正确={want}  识别成={got}")
 
-    total = len(CASES)
-    elapsed = time.time() - start
-    print(f"\n准确率：{ok}/{total} = {ok / total:.0%}")
-    print(f"耗时：{elapsed:.1f}s（并发={MAX_WORKERS}）")
+def report(name, rows, results, show_error, engine):
+    total = len(rows)
+    print(f"\n=== {name} / engine={engine} ===")
+    if not total:
+        print("无样本")
+        return
+    ok = sum(1 for r, g in zip(rows, results) if r["intent"] == g)
+    print(f"样本：{total}  正确：{ok}  准确率：{ok / total:.1%}")
+
+    labels = [i for i in INTENTS if any(r["intent"] == i for r in rows)]
+    print("\n每类指标：")
+    print(f"{'intent':<16}{'support':>8}{'precision':>11}{'recall':>9}{'f1':>8}")
+    for label in labels:
+        tp = sum(1 for r, g in zip(rows, results) if r["intent"] == label and g == label)
+        fp = sum(1 for r, g in zip(rows, results) if r["intent"] != label and g == label)
+        fn = sum(1 for r, g in zip(rows, results) if r["intent"] == label and g != label)
+        support = tp + fn
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / support if support else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        print(f"{label:<16}{support:>8}{precision:>11.1%}{recall:>9.1%}{f1:>8.1%}")
+
+    cols = labels + sorted({g for g in results if g not in labels})
+    print("\n混淆矩阵（行=真实，列=预测）：")
+    print(f"{'':<16}" + "".join(f"{c:>16}" for c in cols))
+    for label in labels:
+        row_counts = Counter(g for r, g in zip(rows, results) if r["intent"] == label)
+        print(f"{label:<16}" + "".join(f"{row_counts.get(c, 0):>16}" for c in cols))
+
+    print("\n按 hard_type 分组准确率：")
+    groups = {}
+    for r, g in zip(rows, results):
+        groups.setdefault(r["hard_type"] or "unknown", []).append(r["intent"] == g)
+    for hard_type, hits in sorted(groups.items()):
+        print(f"  {hard_type:<14}{sum(hits)}/{len(hits)} = {sum(hits) / len(hits):.1%}")
+
+    wrong = [(r, g) for r, g in zip(rows, results) if r["intent"] != g]
+    print(f"\n错例：{len(wrong)} 条")
+    shown = wrong if show_error == 0 else wrong[:show_error]
+    for r, got in shown:
+        extra = f"（上一轮={r['prev_intent']}）" if r.get("prev_intent") else ""
+        print(f"  [{r['id']}] {r['text']}  正确={r['intent']} 识别={got}{extra}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="意图识别评测")
+    parser.add_argument(
+        "--split",
+        choices=["dev", "test", "all"],
+        default="dev",
+        help="评测哪个集合；默认 dev，调 prompt 时不要看 test",
+    )
+    parser.add_argument(
+        "--show-error",
+        type=int,
+        default=20,
+        help="最多打印多少条错例，0 表示全部，默认 20",
+    )
+    parser.add_argument(
+        "--engine",
+        choices=["llm", "rule"],
+        default="llm",
+        help="分类引擎：llm 调 DeepSeek（默认），rule 为纯关键词规则基线",
+    )
+    args = parser.parse_args()
+
+    rows = load_cases()
+    splits = ["dev", "test"] if args.split == "all" else [args.split]
+    start = time.time()
+    for split in splits:
+        subset = [r for r in rows if r["split"] == split]
+        if split == "test" and args.split == "all":
+            print("\n注意：test 集只用于最终验收，不要据此回头调 prompt。")
+        results = run_suite(subset, args.engine)
+        report(split, subset, results, args.show_error, args.engine)
+    print(f"\n耗时：{time.time() - start:.1f}s（并发={MAX_WORKERS}）")
+
+
+if __name__ == "__main__":
+    main()

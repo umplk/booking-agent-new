@@ -29,12 +29,13 @@ class Scenario(Base):
     max_active_per_user = Column(Integer, default=5, nullable=False)
     cancel_before_minutes = Column(Integer, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True) ##这个字段是外键，如果被用户删除，则被设为NULL
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)##当前UTC时间
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)##表示每次更新记录时自动刷新这个字段
 
-    resources = relationship("Resource", back_populates="scenario", cascade="all, delete-orphan")
-    reservations = relationship("Reservation", back_populates="scenario", cascade="all, delete-orphan")
+    ##ORM的关联联系
+    resources = relationship("Resource", back_populates="scenario", cascade="all, delete-orphan")##一个场景可以关联多种资源
+    reservations = relationship("Reservation", back_populates="scenario", cascade="all, delete-orphan")##一个场景可以关联多种预约
 
     def __repr__(self):
         return f"<Scenario(id={self.id}, name={self.name})>"
