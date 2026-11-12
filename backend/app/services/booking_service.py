@@ -26,6 +26,9 @@ def _slots_overlap(start: datetime, end: datetime, slot_start: datetime, slot_en
 def create_reservation(db: Session, current_user: User, scenario_id: int, resource_id: int, start_time: datetime, end_time: datetime) -> Reservation:
     # 悲观锁：先锁住目标资源行，保证同一资源的预约冲突检查与写入串行化。
     # 必须作为事务的第一条语句，后续快照读才能看到持锁期间其他事务已提交的数据。
+    # .query)()查询，.fliter()过滤.
+    # with_for_update() 是 SQLAlchemy 提供的行级锁机制，用于在事务中锁定查询结果的行，防止其他事务同时修改这些数据，从而避免并发问题。
+    # as: 将捕获到的 OperationalError 异常重新抛出为 HTTPException，返回 503 服务不可用状态码，并提示用户当前预约人数较多，请稍后重试。
     try:
         resource = db.query(Resource).filter(Resource.id == resource_id).with_for_update().first()
     except OperationalError as exc:
@@ -57,7 +60,7 @@ def create_reservation(db: Session, current_user: User, scenario_id: int, resour
         raise _booking_error("不能预约过去的时间")
 
     if scenario.min_advance_minutes and scenario.min_advance_minutes > 0:
-        advance_minutes = int((start_time - now).total_seconds() // 60)
+        advance_minutes = int((start_time - now).total_seconds() // 60) ##预约开始时间比现在晚多少分钟，结果存进 advance_minutes
         if advance_minutes < scenario.min_advance_minutes:
             raise _booking_error(f"需至少提前 {scenario.min_advance_minutes} 分钟预约")
 
@@ -126,8 +129,9 @@ def create_reservation(db: Session, current_user: User, scenario_id: int, resour
                 Reservation.start_time >= day_start,
                 Reservation.start_time < day_end,
             )
-            .all()
+            .all() ##拿到符合以上所有条件的预约记录，存进 day_rows
         )
+        # 计算今天约了多少分钟，检查有没有超限
         used = sum(int((r.end_time - r.start_time).total_seconds() // 60) for r in day_rows)
         if used + duration_minutes > scenario.max_minutes_per_day:
             raise _booking_error(f"每日预约总时长不能超过 {scenario.max_minutes_per_day} 分钟")
@@ -141,8 +145,8 @@ def create_reservation(db: Session, current_user: User, scenario_id: int, resour
         status="confirmed",
     )
     db.add(reservation)
-    db.commit()
-    db.refresh(reservation)
+    db.commit()#提交事务
+    db.refresh(reservation)#刷新对象，同步数据库中的最新数据
     return reservation
 
 
@@ -181,12 +185,13 @@ def query_availability(db: Session, scenario_id: int, target_date: date, range_s
     if not scenario:
         raise _booking_error("预约场景不存在")
 
+    #查询所有在目标日期有预约的记录，排除已取消的预约
     booked_rows = (
         db.query(Reservation)
         .filter(
             Reservation.scenario_id == scenario_id,
             Reservation.status != "cancelled",
-            Reservation.start_time < _combine(target_date + timedelta(days=1), time.min),
+            Reservation.start_time < _combine(target_date + timedelta(days=1), time.min), #判断预约在今天发生
             Reservation.end_time > _combine(target_date, time.min),
         )
         .all()
@@ -205,13 +210,15 @@ def query_availability(db: Session, scenario_id: int, target_date: date, range_s
     )
     for resource in resources:
         slots: list[TimeSlot] = []
+        #动态计算调整范围
         cursor = _combine(target_date, resource.open_start)
         end_boundary = _combine(target_date, resource.open_end)
         if range_start and _combine(target_date, range_start) > cursor:
             cursor = _combine(target_date, range_start)
         if range_end and _combine(target_date, range_end) < end_boundary:
             end_boundary = _combine(target_date, range_end)
-        booked = booked_by_resource.get(resource.id, [])
+        booked = booked_by_resource.get(resource.id, [])##获取当前资源在目标日期的所有预约时间段
+        ##时间切片循环
         while cursor < end_boundary:
             slot_end = cursor + timedelta(minutes=step)
             if slot_end > end_boundary:
@@ -219,6 +226,7 @@ def query_availability(db: Session, scenario_id: int, target_date: date, range_s
             if not any(_slots_overlap(b[0], b[1], cursor, slot_end) for b in booked):
                 slots.append(TimeSlot(start=cursor.strftime("%H:%M"), end=slot_end.strftime("%H:%M")))
             cursor = slot_end
+        # 将当前资源的可用时间段信息封装为 ResourceAvailability 对象，并添加到结果列表中
         results.append(
             ResourceAvailability(
                 resource_id=resource.id,
@@ -229,4 +237,5 @@ def query_availability(db: Session, scenario_id: int, target_date: date, range_s
             )
         )
 
+    #返回给前端
     return {"scenario_id": scenario_id, "date": target_date.isoformat(), "free_slots_count": sum(len(r.free_slots) for r in results), "resources": results}

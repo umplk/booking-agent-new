@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
-from app.utils.security import decode_token
+from app.utils.security import ACCESS_TOKEN_TYPE, decode_token
 
 # 支持两种认证方式（Swagger Authorize 弹窗会同时显示两个输入区域）：
 # 1. OAuth2 密码流：直接填用户名/密码，走 /api/auth/token 换取 token
@@ -34,7 +34,7 @@ def get_current_user(
     token = token or (credentials.credentials if credentials else None)
     if not token:
         raise credentials_exception
-    payload = decode_token(token)
+    payload = decode_token(token, expected_type=ACCESS_TOKEN_TYPE)
     if payload is None or payload.get("sub") is None:
         raise credentials_exception
     username: str = payload.get("sub")
@@ -72,7 +72,7 @@ def get_optional_user(
     token = token or (credentials.credentials if credentials else None)
     if not token:
         return None
-    payload = decode_token(token)
+    payload = decode_token(token, expected_type=ACCESS_TOKEN_TYPE)
     if payload is None or payload.get("sub") is None:
         return None
     username: str = payload.get("sub")

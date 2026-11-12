@@ -1,14 +1,49 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models.user import User
-from app.schemas.user import UserRegister, UserLogin, UserResponse, Token
-from app.utils.security import get_password_hash, verify_password, create_access_token
+from app.schemas.user import (
+    UserRegister,
+    UserLogin,
+    UserResponse,
+    Token,
+    RefreshRequest,
+)
+from app.utils import token_store
+from app.utils.security import (
+    REFRESH_TOKEN_TYPE,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_password_hash,
+    verify_password,
+)
 from app.utils.response import success
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
+
+
+def _issue_tokens(user: User) -> dict:
+    claims = {"sub": user.username}
+    return {
+        "access_token": create_access_token(claims),
+        "refresh_token": create_refresh_token(claims),
+        "token_type": "bearer",
+        "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }
+
+
+def _invalid_refresh() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="刷新令牌无效或已过期",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 @router.post("/register", summary="用户注册")
@@ -39,9 +74,7 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == payload.username).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
-    access_token = create_access_token(data={"sub": user.username, "role": user.role})
-    token = Token(access_token=access_token, token_type="bearer")
-    return success(data=token.model_dump(), message="登录成功")
+    return success(data=_issue_tokens(user), message="登录成功")
 
 
 @router.post("/token", summary="OAuth2 表单登录（供 Swagger Authorize 弹窗使用）")
@@ -54,5 +87,23 @@ def login_form(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="用户名或密码错误",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = create_access_token(data={"sub": user.username, "role": user.role})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return _issue_tokens(user)
+
+
+@router.post("/refresh", summary="刷新访问令牌（refresh 单次使用，用后轮换）")
+def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
+    data = decode_token(payload.refresh_token, expected_type=REFRESH_TOKEN_TYPE)
+    if not data or not data.get("sub") or not data.get("jti"):
+        raise _invalid_refresh()
+
+    jti = data["jti"]
+    if token_store.is_revoked(jti):
+        raise _invalid_refresh()
+
+    user = db.query(User).filter(User.username == data["sub"]).first()
+    if user is None:
+        raise _invalid_refresh()
+
+    remaining = int(data["exp"] - datetime.now(timezone.utc).timestamp())
+    token_store.revoke(jti, remaining)
+    return success(data=_issue_tokens(user), message="刷新成功")

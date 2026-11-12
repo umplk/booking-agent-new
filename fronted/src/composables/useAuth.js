@@ -1,6 +1,6 @@
 /* 认证状态管理 —— 全局单例，保留原有接口与 token 逻辑 */
 import { reactive } from 'vue';
-import { apiFetch, setToken, clearToken, getToken } from '../api/request.js';
+import { apiFetch, setTokens, clearToken, getToken } from '../api/request.js';
 
 const state = reactive({
   user: null,
@@ -18,7 +18,7 @@ export async function fetchMe() {
 
 export async function login(username, password) {
   const data = await apiFetch('/api/auth/login', { method: 'POST', body: { username, password } });
-  setToken(data.access_token);
+  setTokens(data.access_token, data.refresh_token);
   await fetchMe();
   return state.user;
 }

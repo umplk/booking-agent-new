@@ -1,6 +1,6 @@
 /* AI 智能助手抽屉状态 —— 保留原 SSE 流式对话逻辑 */
 import { reactive, nextTick } from 'vue';
-import { API_BASE, getToken } from '../api/request.js';
+import { API_BASE, ensureFreshToken } from '../api/request.js';
 
 const AGENT_API = '/api/agent/chat';
 
@@ -38,9 +38,10 @@ function getAgentSessionId() {
 }
 
 async function streamChat(text, onPartial) {
+  const token = await ensureFreshToken();
   const resp = await fetch(API_BASE + AGENT_API, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
     body: JSON.stringify({ message: text, session_id: getAgentSessionId() }),
   });
   if (!resp.ok) {

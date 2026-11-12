@@ -12,8 +12,16 @@ class Settings:
     )
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
-        os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440")
+        os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15")
     )
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = int(
+        os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7")
+    )
+    JWT_ISSUER: str = os.getenv("JWT_ISSUER", "booking-platform")
+    JWT_AUDIENCE: str = os.getenv("JWT_AUDIENCE", "booking-web")
+
+    # 令牌撤销列表（refresh 轮换、登出、改密）使用的 Redis；留空则降级为进程内存储
+    REDIS_URL: str = os.getenv("REDIS_URL", "")
 
     CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "*")
 

@@ -11,6 +11,7 @@ from app.config import settings
 from app.database import Base, engine, SessionLocal
 from app.models import User, Scenario, Resource, Reservation  # noqa: F401  确保模型被注册
 from app.utils.security import get_password_hash
+from app.utils.token_store import init_token_store
 from app.routers import auth, users, scenarios, resources, reservations, agent
 from app.seed import init_seed_data
 
@@ -83,6 +84,7 @@ def _relax_user_role_constraint() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_token_store()
     Base.metadata.create_all(bind=engine)
     _ensure_schema_columns()
     _relax_user_role_constraint()
