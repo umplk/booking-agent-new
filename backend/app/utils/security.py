@@ -6,6 +6,7 @@ import bcrypt
 from jose import JWTError, jwt
 
 from app.config import settings
+from app.utils import token_store
 
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
@@ -66,3 +67,11 @@ def decode_token(token: str, expected_type: Optional[str] = None) -> Optional[di
     if expected_type and payload.get("type") != expected_type:
         return None
     return payload
+
+
+def issued_before_password_change(payload: dict, user_id: int) -> bool:
+    """改密后，iat 早于改密时刻的令牌视为失效（同秒边界放行，避免误杀刚签发的新令牌）。"""
+    changed_at = token_store.password_changed_at(user_id)
+    if not changed_at:
+        return False
+    return int(payload.get("iat", 0)) < changed_at

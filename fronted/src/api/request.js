@@ -17,6 +17,21 @@ export function clearToken() {
   localStorage.removeItem(REFRESH_KEY);
 }
 
+/* 登出当前设备：keepalive 保证页面跳转时请求也能送达；失败不影响本地清理 */
+export function logoutSession() {
+  const access = getToken();
+  const refresh = getRefreshToken();
+  if (!access && !refresh) return;
+  const headers = { 'Content-Type': 'application/json' };
+  if (access) headers['Authorization'] = 'Bearer ' + access;
+  fetch(API_BASE + '/api/auth/logout', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ refresh_token: refresh || null }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 function parseExpiry(token) {
   try {
     const segment = token.split('.')[1];

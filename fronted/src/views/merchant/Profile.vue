@@ -1,9 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { useAuth } from '../../composables/useAuth.js';
+import { useRouter } from 'vue-router';
+import { useAuth, logout } from '../../composables/useAuth.js';
 import { apiFetch } from '../../api/request.js';
 import { showResult } from '../../composables/useResult.js';
 
+const router = useRouter();
 const auth = useAuth();
 const statTotal = ref('—');
 const statValid = ref('—');
@@ -47,6 +49,12 @@ async function saveEdit() {
     const updated = await apiFetch('/api/users/me', { method: 'PUT', body });
     auth.user = updated;
     editOpen.value = false;
+    if (body.password) {
+      logout();
+      showResult({ type: 'success', title: '密码已修改', desc: '所有设备已退出，请使用新密码重新登录。' });
+      router.push('/login');
+      return;
+    }
     showResult({ type: 'success', title: '保存成功', desc: '个人信息已更新。' });
   } catch (e) { editError.value = e.message || '保存失败'; }
 }

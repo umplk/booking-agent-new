@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -11,16 +12,19 @@ from app.schemas.user import (
     UserRegister,
     UserLogin,
     UserResponse,
-    Token,
     RefreshRequest,
+    LogoutRequest,
 )
 from app.utils import token_store
+from app.utils.deps import bearer_scheme, oauth2_scheme
 from app.utils.security import (
+    ACCESS_TOKEN_TYPE,
     REFRESH_TOKEN_TYPE,
     create_access_token,
     create_refresh_token,
     decode_token,
     get_password_hash,
+    issued_before_password_change,
     verify_password,
 )
 from app.utils.response import success
@@ -44,6 +48,25 @@ def _invalid_refresh() -> HTTPException:
         detail="刷新令牌无效或已过期",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def _remaining_ttl(payload: dict) -> int:
+    try:
+        return int(payload["exp"] - datetime.now(timezone.utc).timestamp())
+    except (KeyError, TypeError, ValueError):
+        return 0
+
+
+def _revoke_token(raw_token: Optional[str], expected_type: Optional[str] = None) -> None:
+    """尽力撤销单个令牌：已过期或无法解析的直接跳过（此时它本就不可用）。"""
+    if not raw_token:
+        return
+    payload = decode_token(raw_token, expected_type=expected_type)
+    if not payload or not payload.get("jti"):
+        return
+    ttl = _remaining_ttl(payload)
+    if ttl > 0:
+        token_store.revoke(payload["jti"], ttl)
 
 
 @router.post("/register", summary="用户注册")
@@ -90,6 +113,20 @@ def login_form(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return _issue_tokens(user)
 
 
+@router.post("/logout", summary="登出当前设备")
+def logout(
+    payload: Optional[LogoutRequest] = None,
+    token: Optional[str] = Depends(oauth2_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+):
+    """撤销当前设备的 access 与 refresh；access 已过期时仍会撤销 refresh，保证登出有效。"""
+    raw_access = token or (credentials.credentials if credentials else None)
+    _revoke_token(raw_access, ACCESS_TOKEN_TYPE)
+    if payload and payload.refresh_token:
+        _revoke_token(payload.refresh_token, REFRESH_TOKEN_TYPE)
+    return success(message="已退出登录")
+
+
 @router.post("/refresh", summary="刷新访问令牌（refresh 单次使用，用后轮换）")
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     data = decode_token(payload.refresh_token, expected_type=REFRESH_TOKEN_TYPE)
@@ -102,6 +139,9 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(User.username == data["sub"]).first()
     if user is None:
+        raise _invalid_refresh()
+
+    if issued_before_password_change(data, user.id):
         raise _invalid_refresh()
 
     remaining = int(data["exp"] - datetime.now(timezone.utc).timestamp())

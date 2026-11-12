@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
-from app.utils.security import ACCESS_TOKEN_TYPE, decode_token
+from app.utils import token_store
+from app.utils.security import (
+    ACCESS_TOKEN_TYPE,
+    decode_token,
+    issued_before_password_change,
+)
 
 # 支持两种认证方式（Swagger Authorize 弹窗会同时显示两个输入区域）：
 # 1. OAuth2 密码流：直接填用户名/密码，走 /api/auth/token 换取 token
@@ -37,9 +42,13 @@ def get_current_user(
     payload = decode_token(token, expected_type=ACCESS_TOKEN_TYPE)
     if payload is None or payload.get("sub") is None:
         raise credentials_exception
+    if token_store.is_revoked(payload.get("jti")):
+        raise credentials_exception
     username: str = payload.get("sub")
     user = db.query(User).filter(User.username == username).first()
     if user is None:
+        raise credentials_exception
+    if issued_before_password_change(payload, user.id):
         raise credentials_exception
     return user
 
@@ -75,5 +84,12 @@ def get_optional_user(
     payload = decode_token(token, expected_type=ACCESS_TOKEN_TYPE)
     if payload is None or payload.get("sub") is None:
         return None
+    if token_store.is_revoked(payload.get("jti")):
+        return None
     username: str = payload.get("sub")
-    return db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        return None
+    if issued_before_password_change(payload, user.id):
+        return None
+    return user
