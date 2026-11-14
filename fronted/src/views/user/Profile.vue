@@ -36,6 +36,11 @@ function openEdit() {
 }
 
 async function saveEdit() {
+  if (pePassword.value && pePassword.value.length < 8) { editError.value = '密码至少 8 位'; return; }
+  if (pePassword.value && (!/[A-Za-z]/.test(pePassword.value) || !/\d/.test(pePassword.value))) {
+    editError.value = '密码需同时包含字母和数字';
+    return;
+  }
   const body = {
     name: peName.value.trim() || null,
     student_id: peStudentId.value.trim() || null,
@@ -92,7 +97,7 @@ onMounted(loadData);
           <div class="form-field"><label>姓名</label><input type="text" class="form-input" v-model="peName" placeholder="请输入姓名"></div>
           <div class="form-field"><label>学号</label><input type="text" class="form-input" v-model="peStudentId" placeholder="请输入学号"></div>
           <div class="form-field"><label>邮箱</label><input type="text" class="form-input" v-model="peEmail" placeholder="请输入邮箱"></div>
-          <div class="form-field"><label>新密码</label><input type="password" class="form-input" v-model="pePassword" placeholder="留空则不修改"></div>
+          <div class="form-field"><label>新密码</label><input type="password" class="form-input" v-model="pePassword" placeholder="至少 8 位，含字母和数字；留空不修改"></div>
         </div>
         <div class="modal-foot">
           <button class="btn btn-ghost" @click="editOpen = false">取消</button>

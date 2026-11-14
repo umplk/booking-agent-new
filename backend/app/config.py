@@ -23,6 +23,9 @@ class Settings:
     # 令牌撤销列表（refresh 轮换、登出、改密）使用的 Redis；留空则降级为进程内存储
     REDIS_URL: str = os.getenv("REDIS_URL", "")
 
+    # 商家自助注册邀请码；留空则关闭商家自助注册（只能由管理员创建）
+    MERCHANT_INVITE_CODE: str = os.getenv("MERCHANT_INVITE_CODE", "")
+
     CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "*")
 
     DEFAULT_ADMIN_USERNAME: str = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")

@@ -1,3 +1,4 @@
+import hmac
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -78,13 +79,30 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
     if payload.student_id and db.query(User).filter(User.student_id == payload.student_id).first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="学号已存在")
 
+    role = payload.role
+    if role == "merchant":
+        expected = (settings.MERCHANT_INVITE_CODE or "").strip()
+        if not expected:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="当前未开放商家自助注册",
+            )
+        provided = (payload.invite_code or "").strip()
+        if not provided or not hmac.compare_digest(
+            provided.encode("utf-8"), expected.encode("utf-8")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="商家邀请码不正确",
+            )
+
     user = User(
         username=payload.username,
         email=payload.email,
         password_hash=get_password_hash(payload.password),
         student_id=payload.student_id,
         name=payload.name,
-        role=payload.role,
+        role=role,
     )
     db.add(user)
     db.commit()

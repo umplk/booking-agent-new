@@ -6,6 +6,7 @@ import { register, login } from '../../composables/useAuth.js';
 const router = useRouter();
 
 const role = ref('student');
+const inviteCode = ref('');
 const username = ref('');
 const name = ref('');
 const studentId = ref('');
@@ -24,8 +25,10 @@ async function doRegister() {
   const p = password.value;
   if (!u || u.length < 3) { error.value = '用户名至少 3 位'; return; }
   if (!em) { error.value = '请输入邮箱'; return; }
-  if (!p || p.length < 6) { error.value = '密码至少 6 位'; return; }
+  if (!p || p.length < 8) { error.value = '密码至少 8 位'; return; }
+  if (!/[A-Za-z]/.test(p) || !/\d/.test(p)) { error.value = '密码需同时包含字母和数字'; return; }
   if (isMerchant.value && !nm) { error.value = '请输入商家名称'; return; }
+  if (isMerchant.value && !inviteCode.value.trim()) { error.value = '请输入商家邀请码'; return; }
   error.value = '';
   submitting.value = true;
   try {
@@ -36,6 +39,7 @@ async function doRegister() {
       name: nm || null,
       student_id: isMerchant.value ? null : (sid || null),
       role: role.value,
+      invite_code: isMerchant.value ? inviteCode.value.trim() : null,
     });
     await login(u, p);
     if (isMerchant.value) router.push('/merchant/dashboard');
@@ -60,11 +64,15 @@ async function doRegister() {
           <button class="role-tab" :class="{ active: !isMerchant }" @click="role = 'student'">用户注册</button>
           <button class="role-tab" :class="{ active: isMerchant }" @click="role = 'merchant'">商家注册</button>
         </div>
+        <div v-if="isMerchant" class="form-field">
+          <label>商家邀请码</label>
+          <input type="text" class="form-input" v-model="inviteCode" placeholder="请输入管理员提供的邀请码" autocomplete="off">
+        </div>
         <div class="form-field"><label>用户名</label><input type="text" class="form-input" v-model="username" placeholder="至少 3 位" autocomplete="off"></div>
         <div class="form-field"><label>{{ isMerchant ? '商家名称' : '姓名' }}</label><input type="text" class="form-input" v-model="name" :placeholder="isMerchant ? '请输入商家名称' : '请输入姓名'" autocomplete="off"></div>
         <div v-if="!isMerchant" class="form-field"><label>学号</label><input type="text" class="form-input" v-model="studentId" placeholder="请输入学号" autocomplete="off"></div>
         <div class="form-field"><label>邮箱</label><input type="text" class="form-input" v-model="email" placeholder="请输入邮箱" autocomplete="off"></div>
-        <div class="form-field"><label>密码</label><input type="password" class="form-input" v-model="password" placeholder="至少 6 位" autocomplete="off"></div>
+        <div class="form-field"><label>密码</label><input type="password" class="form-input" v-model="password" placeholder="至少 8 位，含字母和数字" autocomplete="off"></div>
         <div class="form-error">{{ error }}</div>
       </div>
       <div class="modal-foot">
