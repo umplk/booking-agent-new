@@ -13,6 +13,7 @@ from app.agent.classifier import (
     extract_by_llm,
     extract_request,
 )
+from app.agent.llm_guard import reset_guard
 from app.config import settings as app_settings
 from app.services import resource_generator
 from app.services.resource_generator import ResourceSpec, parse_description
@@ -43,11 +44,13 @@ def _validation_error(model, **data):
 class LlmFallbackTest(unittest.TestCase):
     def setUp(self):
         fallback_metrics.reset()
+        reset_guard()
         self._api_key = app_settings.DEEPSEEK_API_KEY
         app_settings.DEEPSEEK_API_KEY = "test-key"
 
     def tearDown(self):
         app_settings.DEEPSEEK_API_KEY = self._api_key
+        reset_guard()
         fallback_metrics.reset()
 
     def _patch_llm(self, chain):

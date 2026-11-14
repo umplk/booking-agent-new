@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.agent.llm import llm
+from app.agent.llm_guard import guarded_invoke
 from app.config import settings
 from app.models.resource import Resource
 from app.models.scenario import Scenario
@@ -98,7 +99,7 @@ def _parse_by_llm(description: str) -> ResourceSpec | None:
         return None
     try:
         chain = llm.with_structured_output(ResourceSpec)
-        result = chain.invoke(_PARSE_PROMPT + "\n\n用户描述：" + description)
+        result = guarded_invoke(chain, _PARSE_PROMPT + "\n\n用户描述：" + description)
         return result
     except Exception as exc:
         record_fallback(

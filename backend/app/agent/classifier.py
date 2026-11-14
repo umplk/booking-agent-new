@@ -5,6 +5,7 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 from app.agent.llm import llm
+from app.agent.llm_guard import guarded_invoke
 from app.config import settings
 from app.utils.fallback_metrics import record_fallback
 
@@ -167,7 +168,7 @@ def extract_by_llm(history_text: str) -> dict:
         return {}
     try:
         chain = llm.with_structured_output(SlotExtraction)
-        result = chain.invoke(_EXTRACT_PROMPT + "\n\n对话内容：\n" + history_text)
+        result = guarded_invoke(chain, _EXTRACT_PROMPT + "\n\n对话内容：\n" + history_text)
         data = result.model_dump()
         for key in ("start_time", "end_time"):
             if data.get(key):
@@ -245,7 +246,7 @@ def detect_intent_llm(text: str) -> str:
         return detect_intent(text)
     try:
         chain = llm.with_structured_output(IntentResult)
-        return chain.invoke(_INTENT_PROMPT + "\n\n用户说：" + text).intent
+        return guarded_invoke(chain, _INTENT_PROMPT + "\n\n用户说：" + text).intent
     except Exception as exc:
         record_fallback("intent", type(exc).__name__, {"input_len": len(text)})
         return detect_intent(text)

@@ -43,6 +43,18 @@ class Settings:
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
+    # LLM 调用保护：单请求超时、SDK 重试次数、并发上限、排队等待上限、熔断阈值与冷却
+    LLM_TIMEOUT_SECONDS: int = int(os.getenv("LLM_TIMEOUT_SECONDS", "15"))
+    LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "1"))
+    LLM_MAX_CONCURRENCY: int = int(os.getenv("LLM_MAX_CONCURRENCY", "5"))
+    LLM_QUEUE_WAIT_SECONDS: int = int(os.getenv("LLM_QUEUE_WAIT_SECONDS", "10"))
+    LLM_CIRCUIT_FAILURE_THRESHOLD: int = int(
+        os.getenv("LLM_CIRCUIT_FAILURE_THRESHOLD", "3")
+    )
+    LLM_CIRCUIT_COOLDOWN_SECONDS: int = int(
+        os.getenv("LLM_CIRCUIT_COOLDOWN_SECONDS", "60")
+    )
+
     @property
     def is_sqlite(self) -> bool:
         return self.DATABASE_URL.startswith("sqlite")
