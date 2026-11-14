@@ -26,6 +26,12 @@ class Settings:
     # 商家自助注册邀请码；留空则关闭商家自助注册（只能由管理员创建）
     MERCHANT_INVITE_CODE: str = os.getenv("MERCHANT_INVITE_CODE", "")
 
+    # 登录限流：账号维度 5 次/15 分钟，IP 维度 20 次/15 分钟
+    LOGIN_MAX_FAILURES: int = int(os.getenv("LOGIN_MAX_FAILURES", "5"))
+    LOGIN_LOCK_MINUTES: int = int(os.getenv("LOGIN_LOCK_MINUTES", "15"))
+    LOGIN_IP_MAX_FAILURES: int = int(os.getenv("LOGIN_IP_MAX_FAILURES", "20"))
+    LOGIN_IP_LOCK_MINUTES: int = int(os.getenv("LOGIN_IP_LOCK_MINUTES", "15"))
+
     CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "*")
 
     DEFAULT_ADMIN_USERNAME: str = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")

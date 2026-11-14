@@ -86,6 +86,14 @@ function redirectToLogin() {
   if (location.pathname !== '/login') location.href = '/login';
 }
 
+function errorMessage(json, status, fallback) {
+  if (json) {
+    if (typeof json.detail === 'string') return json.detail;
+    if (json.message) return json.message;
+  }
+  return fallback || ('HTTP ' + status);
+}
+
 async function send(path, options, token, allowRefresh) {
   const opts = { ...options, headers: { ...(options.headers || {}) } };
   if (token) opts.headers['Authorization'] = 'Bearer ' + token;
@@ -109,10 +117,10 @@ async function send(path, options, token, allowRefresh) {
     }
     clearToken();
     redirectToLogin();
-    throw { message: (json && json.message) || '登录状态已失效', code: 401 };
+    throw { message: errorMessage(json, 401, '登录状态已失效'), code: 401 };
   }
   if (json && json.code && json.code !== 200) throw { message: json.message || '请求失败', code: json.code };
-  if (!resp.ok) throw { message: (json && json.message) || ('HTTP ' + resp.status), code: resp.status };
+  if (!resp.ok) throw { message: errorMessage(json, resp.status), code: resp.status };
   return json.data;
 }
 

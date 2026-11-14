@@ -2,7 +2,7 @@ import hmac
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,7 @@ from app.schemas.user import (
     RefreshRequest,
     LogoutRequest,
 )
-from app.utils import token_store
+from app.utils import rate_limit, token_store
 from app.utils.deps import bearer_scheme, oauth2_scheme
 from app.utils.security import (
     ACCESS_TOKEN_TYPE,
@@ -48,6 +48,18 @@ def _invalid_refresh() -> HTTPException:
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="刷新令牌无效或已过期",
         headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _too_many_attempts(remaining: int) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=f"登录尝试过于频繁，请 {rate_limit.format_wait(remaining)}后重试",
+        headers={"Retry-After": str(remaining)},
     )
 
 
@@ -111,23 +123,41 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login", summary="用户登录")
-def login(payload: UserLogin, db: Session = Depends(get_db)):
+def login(payload: UserLogin, request: Request, db: Session = Depends(get_db)):
+    client_ip = _client_ip(request)
+    remaining = rate_limit.remaining_lock(payload.username, client_ip)
+    if remaining > 0:
+        raise _too_many_attempts(remaining)
+
     user = db.query(User).filter(User.username == payload.username).first()
     if not user or not verify_password(payload.password, user.password_hash):
+        rate_limit.record_failure(payload.username, client_ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
+    rate_limit.clear_user_failures(payload.username)
     return success(data=_issue_tokens(user), message="登录成功")
 
 
 @router.post("/token", summary="OAuth2 表单登录（供 Swagger Authorize 弹窗使用）")
-def login_form(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login_form(
+    request: Request,
+    form: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
     """标准 OAuth2 密码流端点，返回 token 格式可直接被 Swagger 识别并自动保存。"""
+    client_ip = _client_ip(request)
+    remaining = rate_limit.remaining_lock(form.username, client_ip)
+    if remaining > 0:
+        raise _too_many_attempts(remaining)
+
     user = db.query(User).filter(User.username == form.username).first()
     if not user or not verify_password(form.password, user.password_hash):
+        rate_limit.record_failure(form.username, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    rate_limit.clear_user_failures(form.username)
     return _issue_tokens(user)
 
 

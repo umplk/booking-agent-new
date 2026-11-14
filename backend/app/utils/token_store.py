@@ -9,6 +9,7 @@ Redis 可用时写入 Redis；未配置或连接失败时降级为进程内 TTL 
 降级模式下多进程部署的撤销状态不共享（单机开发/演示可接受）。
 """
 import logging
+import math
 import threading
 import time
 
@@ -21,6 +22,7 @@ _PWD_KEY_PREFIX = "pwd_changed:"
 
 _memory: dict = {}
 _pwd_memory: dict = {}
+_counter_memory: dict = {}
 _lock = threading.Lock()
 _redis_client = None
 _backend = None
@@ -76,6 +78,12 @@ def _purge_pwd_expired(now: float) -> None:
     expired = [uid for uid, (_, expire_at) in _pwd_memory.items() if expire_at <= now]
     for uid in expired:
         _pwd_memory.pop(uid, None)
+
+
+def _purge_counter_expired(now: float) -> None:
+    expired = [k for k, (_, expire_at) in _counter_memory.items() if expire_at <= now]
+    for k in expired:
+        _counter_memory.pop(k, None)
 
 
 def revoke(jti: str, ttl_seconds: int) -> None:
@@ -154,8 +162,101 @@ def password_changed_at(user_id: int) -> int:
         return changed_at
 
 
+# ===== 通用计数原语（登录限流等复用同一 Redis 连接与降级逻辑） =====
+
+def incr(key: str, ttl_seconds: int) -> int:
+    """固定窗口计数：首次写入时设 TTL，后续自增不刷新窗口。"""
+    _ensure_backend()
+    ttl = max(int(ttl_seconds), 1)
+    if _redis_client is not None:
+        try:
+            _redis_client.set(key, 0, ex=ttl, nx=True)
+            return int(_redis_client.incr(key))
+        except Exception as exc:
+            logger.warning("写入 Redis 计数失败（%s），本次改存进程内", exc)
+    now = time.time()
+    with _lock:
+        _purge_counter_expired(now)
+        value, expire_at = _counter_memory.get(key, (0, 0.0))
+        if expire_at <= now:
+            value, expire_at = 0, now + ttl
+        value += 1
+        _counter_memory[key] = (value, expire_at)
+        return value
+
+
+def count(key: str) -> int:
+    _ensure_backend()
+    if _redis_client is not None:
+        try:
+            value = _redis_client.get(key)
+            return int(value) if value else 0
+        except Exception as exc:
+            logger.warning("读取 Redis 计数失败（%s），本次改查进程内", exc)
+    now = time.time()
+    with _lock:
+        item = _counter_memory.get(key)
+        if item is None:
+            return 0
+        value, expire_at = item
+        if expire_at <= now:
+            _counter_memory.pop(key, None)
+            return 0
+        return value
+
+
+def ttl(key: str) -> int:
+    """剩余有效期（秒，向上取整）；键不存在或已过期返回 0。"""
+    _ensure_backend()
+    if _redis_client is not None:
+        try:
+            ms = int(_redis_client.pttl(key))
+            if ms < 0:
+                return 0
+            return max(int(math.ceil(ms / 1000)), 1)
+        except Exception as exc:
+            logger.warning("读取 Redis TTL 失败（%s），本次改查进程内", exc)
+    now = time.time()
+    with _lock:
+        item = _counter_memory.get(key)
+        if item is None:
+            return 0
+        _, expire_at = item
+        remaining = expire_at - now
+        if remaining <= 0:
+            return 0
+        return max(int(math.ceil(remaining)), 1)
+
+
+def set_value(key: str, ttl_seconds: int) -> None:
+    _ensure_backend()
+    ttl = max(int(ttl_seconds), 1)
+    if _redis_client is not None:
+        try:
+            _redis_client.setex(key, ttl, "1")
+            return
+        except Exception as exc:
+            logger.warning("写入 Redis 标记失败（%s），本次改存进程内", exc)
+    now = time.time()
+    with _lock:
+        _purge_counter_expired(now)
+        _counter_memory[key] = (1, now + ttl)
+
+
+def delete(key: str) -> None:
+    _ensure_backend()
+    if _redis_client is not None:
+        try:
+            _redis_client.delete(key)
+        except Exception as exc:
+            logger.warning("删除 Redis 键失败（%s），本次改删进程内", exc)
+    with _lock:
+        _counter_memory.pop(key, None)
+
+
 def reset() -> None:
     """清空进程内撤销记录（测试用）。"""
     with _lock:
         _memory.clear()
         _pwd_memory.clear()
+        _counter_memory.clear()
