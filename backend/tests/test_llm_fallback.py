@@ -16,6 +16,7 @@ from app.agent.classifier import (
 from app.config import settings as app_settings
 from app.services import resource_generator
 from app.services.resource_generator import ResourceSpec, parse_description
+from app.utils import fallback_metrics
 
 
 class _FakeChain:
@@ -41,11 +42,13 @@ def _validation_error(model, **data):
 
 class LlmFallbackTest(unittest.TestCase):
     def setUp(self):
+        fallback_metrics.reset()
         self._api_key = app_settings.DEEPSEEK_API_KEY
         app_settings.DEEPSEEK_API_KEY = "test-key"
 
     def tearDown(self):
         app_settings.DEEPSEEK_API_KEY = self._api_key
+        fallback_metrics.reset()
 
     def _patch_llm(self, chain):
         fake_llm = Mock()
@@ -54,23 +57,24 @@ class LlmFallbackTest(unittest.TestCase):
 
     def test_noise_output_falls_back_to_rule_intent(self):
         with self._patch_llm(_FakeChain(result=None)):
-            with self.assertLogs("app.agent.classifier", level="WARNING") as logs:
+            with self.assertLogs("app.utils.fallback_metrics", level="WARNING") as logs:
                 intent = detect_intent_llm("帮我预约自习室")
         self.assertEqual(intent, "book")
         self.assertEqual(intent, detect_intent("帮我预约自习室"))
-        self.assertTrue(any("降级" in line for line in logs.output))
+        self.assertTrue(any("stage=intent" in line for line in logs.output))
 
     def test_illegal_enum_falls_back_to_rule_intent(self):
         exc = _validation_error(classifier.IntentResult, intent="unknown")
         with self._patch_llm(_FakeChain(exc=exc)):
-            with self.assertLogs("app.agent.classifier", level="WARNING"):
+            with self.assertLogs("app.utils.fallback_metrics", level="WARNING"):
                 self.assertEqual(detect_intent_llm("取消预约号 3"), "cancel")
 
     def test_noise_output_falls_back_to_regex_slots(self):
         with self._patch_llm(_FakeChain(result=None)):
-            with self.assertLogs("app.agent.classifier", level="WARNING") as logs:
+            with self.assertLogs("app.utils.fallback_metrics", level="WARNING") as logs:
                 self.assertEqual(extract_by_llm("明天 15:00-16:00 自习室 A1"), {})
-        self.assertTrue(any("降级" in line for line in logs.output))
+        self.assertTrue(any("stage=slot" in line for line in logs.output))
+        self.assertGreaterEqual(fallback_metrics.snapshot()["by_stage"]["slot"], 1)
 
     def test_extract_request_merges_regex_when_llm_empty(self):
         with patch.object(classifier, "extract_by_llm", return_value={}):

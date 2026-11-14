@@ -25,6 +25,7 @@ from app.models.resource import Resource
 from app.models.scenario import Scenario
 from app.models.user import User
 from app.routers.agent import ChatRequest, chat
+from app.utils import fallback_metrics
 import app.agent.nodes as nodes
 import app.agent.tools as tools
 
@@ -102,6 +103,7 @@ class AgentApiTest(unittest.TestCase):
 
     @unittest.skipUnless(_ASYNC_AVAILABLE, "当前环境无法创建 asyncio 事件循环（沙箱禁网），跳过端到端异步测试")
     def test_sse_error_hides_internal_detail(self):
+        fallback_metrics.reset()
         boom = RuntimeError("api_key=sk-secret-123 internal=10.0.0.8")
         with patch("app.routers.agent.graph.ainvoke", new=AsyncMock(side_effect=boom)):
             with self.assertLogs("app.routers.agent", level="ERROR") as logs:
@@ -110,6 +112,7 @@ class AgentApiTest(unittest.TestCase):
         self.assertNotIn("sk-secret", text)
         self.assertNotIn("10.0.0.8", text)
         self.assertIn("sk-secret", "\n".join(logs.output))
+        self.assertEqual(fallback_metrics.snapshot()["by_stage"].get("sse"), 1)
 
 
 if __name__ == "__main__":

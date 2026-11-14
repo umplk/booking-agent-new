@@ -1,5 +1,4 @@
 """AI 辅助批量生成资源：将自然语言描述解析为结构化规格并批量创建资源。"""
-import logging
 import re
 from datetime import time
 from typing import List
@@ -11,8 +10,7 @@ from app.agent.llm import llm
 from app.config import settings
 from app.models.resource import Resource
 from app.models.scenario import Scenario
-
-_logger = logging.getLogger(__name__)
+from app.utils.fallback_metrics import record_fallback
 
 _RE_HHMM = re.compile(r"^(\d{1,2})[:：](\d{1,2})$")
 _RE_HH_CN = re.compile(r"^(\d{1,2})\s*[点时時]$")
@@ -103,7 +101,9 @@ def _parse_by_llm(description: str) -> ResourceSpec | None:
         result = chain.invoke(_PARSE_PROMPT + "\n\n用户描述：" + description)
         return result
     except Exception as exc:
-        _logger.warning("资源规格 LLM 输出不可用，降级为正则解析: %s", exc)
+        record_fallback(
+            "resource_spec", type(exc).__name__, {"description_len": len(description)}
+        )
         return None
 
 
@@ -157,7 +157,7 @@ def _to_time(hhmm: str, default: time) -> time:
         parts = str(hhmm).split(":")
         return time(int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
     except (TypeError, ValueError):
-        _logger.warning("开放时间 %r 非法，回退为 %s", hhmm, default.strftime("%H:%M"))
+        record_fallback("resource_time", "invalid_value", {"value": str(hhmm)[:20]})
         return default
 
 

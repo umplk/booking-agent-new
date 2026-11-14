@@ -260,3 +260,29 @@ def reset() -> None:
         _memory.clear()
         _pwd_memory.clear()
         _counter_memory.clear()
+
+
+# ===== 持久累计计数（降级指标等，不设 TTL） =====
+
+def incr_total(key: str) -> int:
+    """Redis 持久累计计数；未配置 Redis 或写入失败时返回 0，由调用方保留进程内计数。"""
+    _ensure_backend()
+    if _redis_client is None:
+        return 0
+    try:
+        return int(_redis_client.incr(key))
+    except Exception as exc:
+        logger.warning("写入 Redis 累计计数失败（%s）", exc)
+        return 0
+
+
+def get_total(key: str) -> int:
+    _ensure_backend()
+    if _redis_client is None:
+        return 0
+    try:
+        value = _redis_client.get(key)
+        return int(value) if value else 0
+    except Exception as exc:
+        logger.warning("读取 Redis 累计计数失败（%s）", exc)
+        return 0

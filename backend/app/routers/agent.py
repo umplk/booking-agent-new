@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field
 
 from app.agent.graph import graph
 from app.models.user import User
-from app.utils.deps import get_current_user
+from app.utils.deps import get_current_admin, get_current_user
+from app.utils.fallback_metrics import record_fallback, snapshot
+from app.utils.response import success
 
 router = APIRouter(prefix="/api/agent", tags=["AI 智能体"])
 
@@ -44,6 +46,7 @@ async def chat(req: ChatRequest, current_user: User = Depends(get_current_user))
                     break
         except Exception:
             _logger.exception("Agent 会话处理失败: session_id=%s", session_id)
+            record_fallback("sse", "unhandled_exception")
             payload = {"session_id": session_id, "error": "服务暂时不可用，请稍后重试"}
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         finally:
@@ -55,3 +58,8 @@ async def chat(req: ChatRequest, current_user: User = Depends(get_current_user))
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/metrics/fallback", summary="LLM 降级指标（管理员）")
+def fallback_metrics(_current_user: User = Depends(get_current_admin)):
+    return success(data=snapshot())

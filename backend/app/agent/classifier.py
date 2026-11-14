@@ -1,4 +1,3 @@
-import logging
 import re
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -7,6 +6,7 @@ from pydantic import BaseModel, field_validator
 
 from app.agent.llm import llm
 from app.config import settings
+from app.utils.fallback_metrics import record_fallback
 
 from typing import Literal
 
@@ -34,8 +34,6 @@ _RE_RESERVATION_ID = re.compile(r"预约号\s*[#号]?\s*(\d+)")
 _RE_NUMBER = re.compile(r"\b(\d+)\b")
 _RE_HHMM = re.compile(r"^(\d{1,2})[:：](\d{1,2})$")
 _RE_HH_CN = re.compile(r"^(\d{1,2})\s*[点时時]$")
-
-_logger = logging.getLogger(__name__)
 
 
 def _normalize_hhmm(value) -> Optional[str]:
@@ -178,7 +176,7 @@ def extract_by_llm(history_text: str) -> dict:
                     data[key] = f"{int(m.group(1)):02d}:{m.group(2)}"
         return data
     except Exception as exc:
-        _logger.warning("槽位提取 LLM 输出不可用，降级为正则提取: %s", exc)
+        record_fallback("slot", type(exc).__name__, {"input_len": len(history_text)})
         return {}
 
 
@@ -249,5 +247,5 @@ def detect_intent_llm(text: str) -> str:
         chain = llm.with_structured_output(IntentResult)
         return chain.invoke(_INTENT_PROMPT + "\n\n用户说：" + text).intent
     except Exception as exc:
-        _logger.warning("意图识别 LLM 输出不可用，降级为规则引擎: %s", exc)
+        record_fallback("intent", type(exc).__name__, {"input_len": len(text)})
         return detect_intent(text)
