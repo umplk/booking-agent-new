@@ -2,6 +2,7 @@ import asyncio
 import sys
 import unittest
 from datetime import date, time, timedelta
+from unittest.mock import AsyncMock, patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -98,6 +99,17 @@ class AgentApiTest(unittest.TestCase):
         self.assertIn("预约成功", text)
         text = self._chat("我的预约", session_id="s1")
         self.assertIn("预约号", text)
+
+    @unittest.skipUnless(_ASYNC_AVAILABLE, "当前环境无法创建 asyncio 事件循环（沙箱禁网），跳过端到端异步测试")
+    def test_sse_error_hides_internal_detail(self):
+        boom = RuntimeError("api_key=sk-secret-123 internal=10.0.0.8")
+        with patch("app.routers.agent.graph.ainvoke", new=AsyncMock(side_effect=boom)):
+            with self.assertLogs("app.routers.agent", level="ERROR") as logs:
+                text = self._chat("你好")
+        self.assertIn("服务暂时不可用", text)
+        self.assertNotIn("sk-secret", text)
+        self.assertNotIn("10.0.0.8", text)
+        self.assertIn("sk-secret", "\n".join(logs.output))
 
 
 if __name__ == "__main__":

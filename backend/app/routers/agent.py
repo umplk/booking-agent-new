@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from typing import Optional
 
@@ -12,6 +13,8 @@ from app.models.user import User
 from app.utils.deps import get_current_user
 
 router = APIRouter(prefix="/api/agent", tags=["AI 智能体"])
+
+_logger = logging.getLogger(__name__)
 
 
 class ChatRequest(BaseModel):
@@ -39,8 +42,9 @@ async def chat(req: ChatRequest, current_user: User = Depends(get_current_user))
                         payload = {"session_id": session_id, "content": content}
                         yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                     break
-        except Exception as exc:
-            payload = {"session_id": session_id, "error": str(exc)}
+        except Exception:
+            _logger.exception("Agent 会话处理失败: session_id=%s", session_id)
+            payload = {"session_id": session_id, "error": "服务暂时不可用，请稍后重试"}
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         finally:
             payload = {"session_id": session_id, "done": True}

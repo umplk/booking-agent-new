@@ -1,15 +1,43 @@
 """AI 辅助批量生成资源：将自然语言描述解析为结构化规格并批量创建资源。"""
+import logging
 import re
 from datetime import time
 from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.agent.llm import llm
 from app.config import settings
 from app.models.resource import Resource
 from app.models.scenario import Scenario
+
+_logger = logging.getLogger(__name__)
+
+_RE_HHMM = re.compile(r"^(\d{1,2})[:：](\d{1,2})$")
+_RE_HH_CN = re.compile(r"^(\d{1,2})\s*[点时時]$")
+_RE_TIME_RANGE = re.compile(r"(\d{1,2})(?::(\d{2}))?\s*[-~至到]\s*(\d{1,2})(?::(\d{2}))?")
+
+
+def _to_hhmm(value) -> str | None:
+    """把 LLM 返回的时间值归一化为 HH:MM，无法识别时返回 None。"""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    m = _RE_HHMM.match(text)
+    if m:
+        hour, minute = int(m.group(1)), int(m.group(2))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return f"{hour:02d}:{minute:02d}"
+        return None
+    m = _RE_HH_CN.match(text)
+    if m:
+        hour = int(m.group(1))
+        if 0 <= hour <= 23:
+            return f"{hour:02d}:00"
+    return None
 
 
 class ResourceSpec(BaseModel):
@@ -21,6 +49,39 @@ class ResourceSpec(BaseModel):
     open_start: str = Field("08:00", description="开放起始 HH:MM")
     open_end: str = Field("22:00", description="开放结束 HH:MM")
     attributes: dict = Field(default_factory=dict, description="每个资源附加的属性")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+
+        count = data.get("count")
+        if isinstance(count, str):
+            m = re.search(r"\d+", count)
+            count = int(m.group(0)) if m else 1
+        if isinstance(count, (int, float)) and not isinstance(count, bool):
+            data["count"] = max(1, min(100, int(count)))
+
+        start = _to_hhmm(data.get("open_start"))
+        end = _to_hhmm(data.get("open_end"))
+        if start is None:
+            m = _RE_TIME_RANGE.search(str(data.get("open_start") or ""))
+            if m:
+                start = _to_hhmm(f"{m.group(1)}:{m.group(2) or '00'}")
+                if end is None:
+                    end = _to_hhmm(f"{m.group(3)}:{m.group(4) or '00'}")
+        data["open_start"] = start or "08:00"
+        data["open_end"] = end or "22:00"
+
+        name = str(data.get("name_prefix") or "").strip()
+        data["name_prefix"] = name or "资源"
+        code = re.sub(r"[^A-Za-z0-9]", "", str(data.get("code_prefix") or "")).upper()
+        data["code_prefix"] = code[:20] or "RES"
+        if not isinstance(data.get("attributes"), dict):
+            data["attributes"] = {}
+        return data
 
 
 _PARSE_PROMPT = (
@@ -41,7 +102,8 @@ def _parse_by_llm(description: str) -> ResourceSpec | None:
         chain = llm.with_structured_output(ResourceSpec)
         result = chain.invoke(_PARSE_PROMPT + "\n\n用户描述：" + description)
         return result
-    except Exception:
+    except Exception as exc:
+        _logger.warning("资源规格 LLM 输出不可用，降级为正则解析: %s", exc)
         return None
 
 
@@ -67,8 +129,11 @@ def _parse_by_regex(description: str) -> ResourceSpec:
     open_start = "08:00"
     open_end = "22:00"
     if m:
-        open_start = f"{int(m.group(1)):02d}:00"
-        open_end = f"{int(m.group(2)):02d}:00"
+        start_hour, end_hour = int(m.group(1)), int(m.group(2))
+        if 0 <= start_hour <= 23:
+            open_start = f"{start_hour:02d}:00"
+        if 0 <= end_hour <= 23:
+            open_end = f"{end_hour:02d}:00"
 
     return ResourceSpec(
         count=count,
@@ -87,16 +152,20 @@ def parse_description(description: str) -> ResourceSpec:
     return spec
 
 
-def _to_time(hhmm: str) -> time:
-    parts = hhmm.split(":")
-    return time(int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+def _to_time(hhmm: str, default: time) -> time:
+    try:
+        parts = str(hhmm).split(":")
+        return time(int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+    except (TypeError, ValueError):
+        _logger.warning("开放时间 %r 非法，回退为 %s", hhmm, default.strftime("%H:%M"))
+        return default
 
 
 def generate_resources(db: Session, scenario: Scenario, description: str) -> List[Resource]:
     """根据描述在指定场景下批量创建资源，返回已创建列表。已存在的编号会跳过。"""
     spec = parse_description(description)
-    open_start = _to_time(spec.open_start)
-    open_end = _to_time(spec.open_end)
+    open_start = _to_time(spec.open_start, time(8, 0))
+    open_end = _to_time(spec.open_end, time(22, 0))
     if open_start >= open_end:
         open_end = time(22, 0)
 

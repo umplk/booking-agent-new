@@ -1,8 +1,9 @@
+import logging
 import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.agent.llm import llm
 from app.config import settings
@@ -31,6 +32,31 @@ _RE_TIME_RANGE = re.compile(r"(\d{1,2})[:：](\d{2})\s*[-~至到]\s*(\d{1,2})[:�
 _RE_SINGLE_TIME = re.compile(r"(\d{1,2})[:：](\d{2})")
 _RE_RESERVATION_ID = re.compile(r"预约号\s*[#号]?\s*(\d+)")
 _RE_NUMBER = re.compile(r"\b(\d+)\b")
+_RE_HHMM = re.compile(r"^(\d{1,2})[:：](\d{1,2})$")
+_RE_HH_CN = re.compile(r"^(\d{1,2})\s*[点时時]$")
+
+_logger = logging.getLogger(__name__)
+
+
+def _normalize_hhmm(value) -> Optional[str]:
+    """把 LLM 返回的时间值归一化为 HH:MM，无法识别时返回 None。"""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    m = _RE_HHMM.match(text)
+    if m:
+        hour, minute = int(m.group(1)), int(m.group(2))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return f"{hour:02d}:{minute:02d}"
+        return None
+    m = _RE_HH_CN.match(text)
+    if m:
+        hour = int(m.group(1))
+        if 0 <= hour <= 23:
+            return f"{hour:02d}:00"
+    return None
 
 
 def detect_intent(text: str) -> str:
@@ -105,6 +131,27 @@ class SlotExtraction(BaseModel):
     resource_query: Optional[str] = None
     reservation_id: Optional[int] = None
 
+    @field_validator("date", "scenario_query", "resource_query", mode="before")
+    @classmethod
+    def _strip_text(cls, value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def _normalize_time(cls, value):
+        return _normalize_hhmm(value)
+
+    @field_validator("reservation_id", mode="before")
+    @classmethod
+    def _coerce_reservation_id(cls, value):
+        if value is None or str(value).strip() == "":
+            return None
+        m = re.search(r"\d+", str(value))
+        return int(m.group(0)) if m else None
+
 
 _EXTRACT_PROMPT = (
     "你是预约系统的参数提取器。从用户最近的发言中提取以下字段，严格遵守：\n"
@@ -130,7 +177,8 @@ def extract_by_llm(history_text: str) -> dict:
                 if m:
                     data[key] = f"{int(m.group(1)):02d}:{m.group(2)}"
         return data
-    except Exception:
+    except Exception as exc:
+        _logger.warning("槽位提取 LLM 输出不可用，降级为正则提取: %s", exc)
         return {}
 
 
@@ -200,5 +248,6 @@ def detect_intent_llm(text: str) -> str:
     try:
         chain = llm.with_structured_output(IntentResult)
         return chain.invoke(_INTENT_PROMPT + "\n\n用户说：" + text).intent
-    except Exception:
+    except Exception as exc:
+        _logger.warning("意图识别 LLM 输出不可用，降级为规则引擎: %s", exc)
         return detect_intent(text)
