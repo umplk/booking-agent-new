@@ -1,5 +1,7 @@
 /* API 配置与请求封装 —— 双 Token（access + refresh）与 401 单飞刷新 */
-export const API_BASE = 'http://127.0.0.1:8000';
+// 生产构建默认走同源 /api（由 nginx 反向代理转发到后端），本地开发仍指向本机后端
+const DEV_API_BASE = 'http://127.0.0.1:8000';
+export const API_BASE = import.meta.env.VITE_API_BASE || (import.meta.env.DEV ? DEV_API_BASE : '');
 
 const ACCESS_KEY = 'token';
 const REFRESH_KEY = 'refresh_token';
