@@ -241,12 +241,20 @@ _INTENT_PROMPT = (
     "注意：句子里出现“场景”“预约”等词不代表意图，要看用户真正想做什么。"
 )
 
-def detect_intent_llm(text: str) -> str:
+def detect_intent_safe(text: str) -> tuple[str, bool]:
+    """返回 (intent, degraded)。degraded=True 表示 LLM 不可用、结果是规则引擎猜的。"""
     if not settings.DEEPSEEK_API_KEY:
-        return detect_intent(text)
+        return detect_intent(text), False
     try:
         chain = llm.with_structured_output(IntentResult)
-        return guarded_invoke(chain, _INTENT_PROMPT + "\n\n用户说：" + text).intent
+        return (
+            guarded_invoke(chain, _INTENT_PROMPT + "\n\n用户说：" + text).intent,
+            False,
+        )
     except Exception as exc:
         record_fallback("intent", type(exc).__name__, {"input_len": len(text)})
-        return detect_intent(text)
+        return detect_intent(text), True
+
+
+def detect_intent_llm(text: str) -> str:
+    return detect_intent_safe(text)[0]

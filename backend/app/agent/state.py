@@ -12,3 +12,5 @@ class BookingState(TypedDict):
     reply: str
     pending_confirmation: bool
     confirmed: bool
+    pending_clarification: bool
+    intent_degraded: bool

@@ -29,6 +29,7 @@ STAGE_LABELS = {
     "resource_spec": "资源参数解析",
     "resource_time": "开放时间解析",
     "sse": "Agent 会话",
+    "clarify": "降级澄清追问",
 }
 
 _TOTAL_KEY = "agent:fallback:total"

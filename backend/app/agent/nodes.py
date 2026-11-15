@@ -4,7 +4,7 @@ from langchain_core.runnables import RunnableConfig
 from app.agent.classifier import (
     apply_prev_intent,
     chitchat_reply,
-    detect_intent_llm,
+    detect_intent_safe,
     extract_request,
 )
 from app.agent.tools import (
@@ -18,6 +18,7 @@ from app.agent.tools import (
 from app.database import SessionLocal
 from app.models.resource import Resource
 from app.models.scenario import Scenario
+from app.utils.fallback_metrics import record_fallback
 
 REQUIRED_SLOTS = {
     "book": ["scenario_id", "resource_id", "date", "start_time", "end_time"],
@@ -121,6 +122,50 @@ def _last_human_text(state: dict) -> str:
     return ""
 
 
+_CLARIFY_INTENTS = {"book", "cancel", "configure"}
+
+_CLARIFY_PROMPT = (
+    "我不太确定你的意思，先确认再执行。你是想：\n"
+    "1. 预约\n"
+    "2. 查询空闲\n"
+    "3. 取消预约\n"
+    "4. 查看我的预约\n"
+    "5. 查看场景\n"
+    "6. 批量生成资源（商家）\n"
+    '直接回复序号或关键词即可，例如"1"或"预约"。'
+)
+
+_CLARIFY_KEYWORDS = (
+    ("cancel", ("取消", "退订", "作废")),
+    ("list_my", ("我的预约", "预约记录", "我的记录")),
+    ("list_scenarios", ("场景", "有哪些", "能约什么")),
+    ("configure", ("生成资源", "批量生成", "配置资源", "新建资源")),
+    ("query", ("查询", "查一下", "空闲", "有没有", "空位", "能约吗")),
+    ("book", ("预约", "订", "约个", "book")),
+)
+
+_CLARIFY_NUMBERS = {
+    "1": "book",
+    "2": "query",
+    "3": "cancel",
+    "4": "list_my",
+    "5": "list_scenarios",
+    "6": "configure",
+}
+
+
+def _match_clarified_intent(text: str) -> str | None:
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    if t in _CLARIFY_NUMBERS:
+        return _CLARIFY_NUMBERS[t]
+    for intent, keywords in _CLARIFY_KEYWORDS:
+        if any(k in t for k in keywords):
+            return intent
+    return None
+
+
 def route_intent(state: dict) -> dict:
     if state.get("pending_confirmation"):
         text = _last_human_text(state)
@@ -138,15 +183,50 @@ def route_intent(state: dict) -> dict:
         reply = '请明确回复"确认"执行或"取消"放弃。'
         return {"reply": reply, "messages": [AIMessage(content=reply)]}
 
+    if state.get("pending_clarification"):
+        text = _last_human_text(state)
+        matched = _match_clarified_intent(text)
+        if matched:
+            return {
+                "pending_clarification": False,
+                "intent_degraded": False,
+                "intent": matched,
+                "reply": "",
+            }
+        reply = (
+            "请直接回复：1 预约 / 2 查询空闲 / 3 取消预约 / "
+            "4 查看我的预约 / 5 查看场景。"
+        )
+        return {
+            "pending_clarification": False,
+            "intent_degraded": False,
+            "intent": "chitchat",
+            "reply": reply,
+            "messages": [AIMessage(content=reply)],
+        }
+
     text = _last_human_text(state)
     prev_intent = state.get("intent")
-    intent = apply_prev_intent(
-        detect_intent_llm(text), prev_intent, state.get("missing")
-    )
+    raw_intent, degraded = detect_intent_safe(text)
+    intent = apply_prev_intent(raw_intent, prev_intent, state.get("missing"))
+    if degraded and raw_intent == intent and intent in _CLARIFY_INTENTS:
+        record_fallback("clarify", "intent_degraded", {"guessed_intent": intent})
+        return {
+            "intent": intent,
+            "intent_degraded": True,
+            "pending_clarification": True,
+            "reply": _CLARIFY_PROMPT,
+            "messages": [AIMessage(content=_CLARIFY_PROMPT)],
+        }
     if intent == "chitchat":
         reply = chitchat_reply(text)
-        return {"intent": intent, "reply": reply, "messages": [AIMessage(content=reply)]}
-    return {"intent": intent, "reply": ""}
+        return {
+            "intent": intent,
+            "intent_degraded": degraded,
+            "reply": reply,
+            "messages": [AIMessage(content=reply)],
+        }
+    return {"intent": intent, "intent_degraded": degraded, "reply": ""}
 
 
 def _all_human_text(state: dict) -> str:
