@@ -49,9 +49,9 @@ async def chat(req: ChatRequest, current_user: User = Depends(get_current_user))
             record_fallback("sse", "unhandled_exception")
             payload = {"session_id": session_id, "error": "服务暂时不可用，请稍后重试"}
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        finally:
-            payload = {"session_id": session_id, "done": True}
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'session_id': session_id, 'done': True}, ensure_ascii=False)}\n\n"
+        else:
+            yield f"data: {json.dumps({'session_id': session_id, 'done': True}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
