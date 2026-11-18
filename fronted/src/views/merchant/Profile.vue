@@ -13,7 +13,6 @@ const statCancel = ref('—');
 const editOpen = ref(false);
 const editError = ref('');
 const peName = ref('');
-const peStudentId = ref('');
 const peEmail = ref('');
 const pePassword = ref('');
 
@@ -34,7 +33,6 @@ async function loadData() {
 
 function openEdit() {
   peName.value = user.value.name || '';
-  peStudentId.value = user.value.student_id || '';
   peEmail.value = user.value.email || '';
   pePassword.value = '';
   editError.value = '';
@@ -47,7 +45,7 @@ async function saveEdit() {
     editError.value = '密码需同时包含字母和数字';
     return;
   }
-  const body = { name: peName.value.trim() || null, student_id: peStudentId.value.trim() || null, email: peEmail.value.trim() };
+  const body = { name: peName.value.trim() || null, email: peEmail.value.trim() };
   if (pePassword.value) body.password = pePassword.value;
   editError.value = '';
   try {
@@ -77,8 +75,7 @@ onMounted(loadData);
             <h2>{{ displayName }}</h2>
             <p class="profile-email">{{ user.email || '—' }}</p>
             <div class="profile-tags">
-              <span class="badge">{{ user.role === 'admin' ? '管理员' : '普通用户' }}</span>
-              <span class="badge ghost">学号：{{ user.student_id || '—' }}</span>
+              <span class="badge">{{ user.role === 'admin' ? '管理员' : user.role === 'merchant' ? '商家' : '普通用户' }}</span>
             </div>
           </div>
           <button class="btn btn-ghost" @click="openEdit">编辑资料</button>
@@ -97,7 +94,6 @@ onMounted(loadData);
         <div class="modal-body">
           <div class="form-error">{{ editError }}</div>
           <div class="form-field"><label>姓名</label><input type="text" class="form-input" v-model="peName" placeholder="请输入姓名"></div>
-          <div class="form-field"><label>学号</label><input type="text" class="form-input" v-model="peStudentId" placeholder="请输入学号"></div>
           <div class="form-field"><label>邮箱</label><input type="text" class="form-input" v-model="peEmail" placeholder="请输入邮箱"></div>
           <div class="form-field"><label>新密码</label><input type="password" class="form-input" v-model="pePassword" placeholder="至少 8 位，含字母和数字；留空不修改"></div>
         </div>

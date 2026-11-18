@@ -48,7 +48,7 @@ const pageTitle = computed(() => (PAGE_META[currentPage.value] || ['', ''])[0]);
 const pageSubtitle = computed(() => (PAGE_META[currentPage.value] || ['', ''])[1]);
 const displayName = computed(() => userDisplayName());
 const avatarChar = computed(() => displayName.value.charAt(0));
-const roleText = computed(() => (isAdmin() ? '管理员' : '普通用户'));
+const roleText = computed(() => (isAdmin() ? '管理员' : '商家'));
 
 const sidebarOpen = ref(false);
 const dropdownOpen = ref(false);

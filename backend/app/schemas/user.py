@@ -19,7 +19,6 @@ class UserRegister(BaseModel):
     student_id: Optional[str] = Field(None, max_length=50)
     name: Optional[str] = Field(None, max_length=50)
     role: str = Field("student", pattern="^(student|merchant)$")
-    invite_code: Optional[str] = Field(None, max_length=64)
 
     @field_validator("password")
     @classmethod

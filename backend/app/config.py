@@ -23,9 +23,6 @@ class Settings:
     # 令牌撤销列表（refresh 轮换、登出、改密）使用的 Redis；留空则降级为进程内存储
     REDIS_URL: str = os.getenv("REDIS_URL", "")
 
-    # 商家自助注册邀请码；留空则关闭商家自助注册（只能由管理员创建）
-    MERCHANT_INVITE_CODE: str = os.getenv("MERCHANT_INVITE_CODE", "")
-
     # 登录限流：账号维度 5 次/15 分钟，IP 维度 20 次/15 分钟
     LOGIN_MAX_FAILURES: int = int(os.getenv("LOGIN_MAX_FAILURES", "5"))
     LOGIN_LOCK_MINUTES: int = int(os.getenv("LOGIN_LOCK_MINUTES", "15"))

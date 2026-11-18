@@ -173,7 +173,7 @@ LLM 不可用时，系统退回关键词规则识别意图；若此时识别出�
 | 登录限流 | 账号维度 5 次 / 15 分钟，IP 维度 20 次 / 15 分钟；锁定期间不再累计，防止攻击者把账号永久锁死 |
 | 启动自检 | 弱 / 默认 / 过短（<32 位）的 `JWT_SECRET_KEY` 或非法算法直接**拒绝启动**；默认账号仍为弱口令时告警 |
 | 角色权限 | `student` / `merchant` / `admin` 三级；商家可管理平台预置场景与自己创建的场景，且只能查看自有场景下的预约；管理员拥有全部权限 |
-| 商家注册 | 需持有邀请码，留空则关闭自助注册 |
+| 商家注册 | 开放自助注册，任何人注册后可创建并管理自己的预约场景 |
 | 错误处理 | 统一异常处理，对外不暴露内部异常原文；Agent 异常返回通用提示 |
 | 部署加固 | 后端容器以非 root 用户运行；数据库、Redis、后端均不对宿主机暴露端口，仅 Nginx 对外；Nginx 设置安全响应头 |
 
@@ -312,7 +312,6 @@ npm run dev          # http://localhost:5173，开发环境默认请求 http://1
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | access 有效期（分钟） |
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | `7` | refresh 有效期（天） |
 | `REDIS_URL` | 空 | 为空或不可用时降级为进程内存储 |
-| `MERCHANT_INVITE_CODE` | 空 | 商家自助注册邀请码，留空则关闭 |
 | `LOGIN_MAX_FAILURES` / `LOGIN_LOCK_MINUTES` | `5` / `15` | 账号维度登录限流 |
 | `LOGIN_IP_MAX_FAILURES` / `LOGIN_IP_LOCK_MINUTES` | `20` / `15` | IP 维度登录限流 |
 | `CORS_ORIGINS` | `*` | 逗号分隔；生产环境同源部署无需跨域 |
@@ -336,7 +335,7 @@ npm run dev          # http://localhost:5173，开发环境默认请求 http://1
 
 | 模块 | 方法 · 路径 | 说明 | 权限 |
 |---|---|---|---|
-| **认证** | `POST /api/auth/register` | 注册（商家需邀请码） | 公开 |
+| **认证** | `POST /api/auth/register` | 注册（学生 / 商家均可自助注册） | 公开 |
 | | `POST /api/auth/login` | 登录，返回 access + refresh | 公开 |
 | | `POST /api/auth/refresh` | 刷新令牌（refresh 单次使用） | 公开 |
 | | `POST /api/auth/logout` | 登出当前设备 | 登录 |

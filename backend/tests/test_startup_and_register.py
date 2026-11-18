@@ -1,7 +1,7 @@
 """启动密钥校验与注册越权测试。
 
-覆盖：弱密钥/短密钥/非法算法拒绝启动；学生注册正常；商家注册必须邀请码；
-邀请码为空时关闭自助注册；admin 角色与弱密码被契约拦截。
+覆盖：弱密钥/短密钥/非法算法拒绝启动；学生注册正常；商家可自助注册（开放平台）；
+admin 角色与弱密码被契约拦截。
 测试直接调用路由函数，不依赖 TestClient 网络环境。
 """
 import os
@@ -75,23 +75,20 @@ class RegisterTest(unittest.TestCase):
         Base.metadata.drop_all(bind=engine)
 
     def setUp(self):
-        self._invite = settings.MERCHANT_INVITE_CODE
         self.session = SessionLocal()
         self.session.query(User).delete()
         self.session.commit()
 
     def tearDown(self):
-        settings.MERCHANT_INVITE_CODE = self._invite
         self.session.close()
 
     @staticmethod
-    def _payload(role="student", invite_code=None, password="Pass1234", username="new_user"):
+    def _payload(role="student", password="Pass1234", username="new_user"):
         return UserRegister(
             username=username,
             email=username + "@example.com",
             password=password,
             role=role,
-            invite_code=invite_code,
         )
 
     def _register(self, **kwargs):
@@ -107,33 +104,10 @@ class RegisterTest(unittest.TestCase):
         user = self.session.query(User).filter(User.username == "student_ok").first()
         self.assertEqual(user.role, "student")
 
-    def test_merchant_without_invite_rejected(self):
-        self.assertEqual(self._register(role="merchant", username="merchant_no_code"), 400)
-
-    def test_merchant_wrong_invite_rejected(self):
-        self.assertEqual(
-            self._register(role="merchant", invite_code="wrong", username="merchant_bad"),
-            400,
-        )
-
-    def test_merchant_correct_invite_ok(self):
-        self.assertEqual(
-            self._register(
-                role="merchant",
-                invite_code=settings.MERCHANT_INVITE_CODE,
-                username="merchant_ok",
-            ),
-            200,
-        )
-        user = self.session.query(User).filter(User.username == "merchant_ok").first()
+    def test_merchant_self_register_open(self):
+        self.assertEqual(self._register(role="merchant", username="merchant_open"), 200)
+        user = self.session.query(User).filter(User.username == "merchant_open").first()
         self.assertEqual(user.role, "merchant")
-
-    def test_merchant_disabled_when_code_empty(self):
-        settings.MERCHANT_INVITE_CODE = ""
-        self.assertEqual(
-            self._register(role="merchant", invite_code="anything", username="merchant_off"),
-            400,
-        )
 
     def test_admin_role_rejected_by_schema(self):
         with self.assertRaises(ValidationError):
